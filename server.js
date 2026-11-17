@@ -9,6 +9,7 @@ const PORT = Number(process.env.PORT) || 4317;
 const SITE = process.env.JIRA_SITE || "https://your-site.atlassian.net";
 const ENV_FILE = process.env.JIRA_ENV_FILE || path.join(os.homedir(), ".release-script.env");
 const SP_FIELD = process.env.JIRA_SP_FIELD || "customfield_10XXX"; // story points
+const TEAM_CLAUSE = process.env.JIRA_TEAM_CLAUSE || "cf[10YYY]"; // Team field (customfield_10YYY)
 const DATA_FILE = path.join(__dirname, "people.json");
 const PAGE = path.join(__dirname, "public", "index.html");
 
@@ -104,6 +105,11 @@ const server = http.createServer(async (req, res) => {
         accountId: u.accountId, displayName: u.displayName, email: u.emailAddress || "",
         avatarUrl: (u.avatarUrls && (u.avatarUrls["48x48"] || u.avatarUrls["32x32"])) || "", active: u.active,
       })));
+    }
+    if (req.method === "GET" && url.pathname === "/api/teams") {
+      const q = url.searchParams.get("q") || "";
+      const r = await jira(`/rest/api/3/jql/autocompletedata/suggestions?fieldName=${encodeURIComponent(TEAM_CLAUSE)}&fieldValue=${encodeURIComponent(q)}`);
+      return send(res, 200, (r.results || []).map(t => ({ teamId: t.value, displayName: String(t.displayName || "").replace(/<[^>]*>/g, "") })));
     }
     if (req.method === "GET" && url.pathname === "/api/projects") {
       const q = url.searchParams.get("q") || "";

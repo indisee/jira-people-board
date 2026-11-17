@@ -11,12 +11,14 @@ use tauri::{http::Response, Manager, State};
 
 const DEFAULT_SITE: &str = "https://your-site.atlassian.net";
 const DEFAULT_SP_FIELD: &str = "customfield_10XXX"; // story points
+const DEFAULT_TEAM_CLAUSE: &str = "cf[10YYY]"; // Team field (customfield_10YYY)
 
 struct Jira {
     client: reqwest::Client,
     site: String,
     auth: String,
     sp_field: String,
+    team_clause: String,
 }
 
 struct AppState {
@@ -66,6 +68,7 @@ fn load_jira(home: PathBuf) -> Result<Jira, String> {
         site: pick("JIRA_SITE", DEFAULT_SITE).trim_end_matches('/').to_string(),
         auth,
         sp_field: pick("JIRA_SP_FIELD", DEFAULT_SP_FIELD),
+        team_clause: pick("JIRA_TEAM_CLAUSE", DEFAULT_TEAM_CLAUSE),
     })
 }
 
@@ -156,6 +159,44 @@ async fn users_search(state: State<'_, AppState>, q: String) -> Result<Value, St
                 "active": u["active"],
             })
         })
+        .collect();
+    Ok(Value::Array(out))
+}
+
+/// Teams (customfield_10YYY) matching `q`, via JQL value suggestions.
+#[tauri::command]
+async fn teams_search(state: State<'_, AppState>, q: String) -> Result<Value, String> {
+    let j = jira(&state)?;
+    let v = j
+        .req(
+            reqwest::Method::GET,
+            &format!(
+                "/rest/api/3/jql/autocompletedata/suggestions?fieldName={}&fieldValue={}",
+                enc(&j.team_clause),
+                enc(&q)
+            ),
+            None,
+        )
+        .await?;
+    let strip = |s: &str| {
+        let mut out = String::new();
+        let mut in_tag = false;
+        for c in s.chars() {
+            match c {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                _ if !in_tag => out.push(c),
+                _ => {}
+            }
+        }
+        out
+    };
+    let out: Vec<Value> = v["results"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| json!({ "teamId": t["value"], "displayName": strip(t["displayName"].as_str().unwrap_or("")) }))
         .collect();
     Ok(Value::Array(out))
 }
@@ -342,6 +383,7 @@ pub fn run() {
             people_save,
             users_search,
             projects_search,
+            teams_search,
             issues_search
         ])
         .run(tauri::generate_context!())

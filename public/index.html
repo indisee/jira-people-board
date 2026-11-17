@@ -135,6 +135,10 @@ input[type=search]:focus{border-color:var(--accent);outline:none}
 .pchip{display:inline-flex;align-items:center;gap:4px;font-family:var(--f-mono);font-size:.75rem;background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:2px 4px 2px 8px}
 .pchip button{border:0;background:transparent;color:inherit;padding:0 4px;font-size:.9rem}
 .hint{color:var(--muted);font-size:.85rem}
+.rsec{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding:8px 8px 2px}
+.avatar.team{border-radius:10px}
+.avatar.team.sm{border-radius:7px}
+tr.collapsed .avatar.team{border-radius:7px}
 .grip{border:0;background:transparent;color:var(--muted);padding:0;width:14px;height:44px;cursor:grab;font-size:.85rem;letter-spacing:-3px;line-height:1;opacity:.45;border-radius:4px}
 tr:hover .grip,.grip:focus-visible{opacity:1}
 .grip:hover{color:var(--fg);background:var(--surface-2)}
@@ -244,6 +248,7 @@ function tauriCall(path, opts) {
   switch (u.pathname) {
     case "/api/people": return opts.method === "PUT" ? TAURI.invoke("people_save", { list: body }) : TAURI.invoke("people_load");
     case "/api/users": return TAURI.invoke("users_search", { q });
+    case "/api/teams": return TAURI.invoke("teams_search", { q });
     case "/api/projects": return TAURI.invoke("projects_search", { q });
     case "/api/search": return TAURI.invoke("issues_search", { jql: body.jql, maxResults: body.maxResults, assignee: body.assignee });
   }
@@ -277,8 +282,12 @@ const store = {
   async remove(id) { people = people.filter(x => x.accountId !== id); await this.persist(); },
 };
 
+// Board rows are people, or teams (Team field) whose tickets have no assignee.
+const isTeam = p => p.kind === "team";
 function jqlFor(p) {
-  const parts = [`assignee = "${p.accountId.replace(/"/g,'')}"`];
+  const parts = isTeam(p)
+    ? [`cf[10YYY] = "${String(p.teamId).replace(/"/g,'')}"`, "assignee is EMPTY"]
+    : [`assignee = "${p.accountId.replace(/"/g,'')}"`];
   if (p.projects && p.projects.length) parts.push(`project in (${p.projects.map(x => `"${x.key.replace(/"/g,'')}"`).join(", ")})`);
   parts.push(donePeriod ? `(statusCategory != Done OR statusCategoryChangedDate >= -${donePeriod}d)` : "statusCategory != Done");
   return parts.join(" AND ") + " ORDER BY updated DESC";
@@ -310,7 +319,7 @@ async function loadTickets(p) {
   tickets[p.accountId] = {...(tickets[p.accountId]||{}), state:"loading"};
   renderTickets(p);
   try {
-    const r = await api("/api/search", { method: "POST", body: JSON.stringify({ jql: jqlFor(p), maxResults: MAX, assignee: p.accountId }) });
+    const r = await api("/api/search", { method: "POST", body: JSON.stringify({ jql: jqlFor(p), maxResults: MAX, assignee: isTeam(p) ? undefined : p.accountId }) });
     const issues = r.issues.sort(byKey);
     tickets[p.accountId] = { state:"ok", issues, more: r.more, url: r.url };
     setStamp();
@@ -329,6 +338,7 @@ function loadAll() { hideBanner(); runPool(people, loadTickets); }
 /* ---------- rendering ---------- */
 function hueOf(s){ let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
 function avatarHTML(p, cls="") {
+  if (isTeam(p)) return `<span class="avatar team ${cls}" style="--h:${hueOf(p.teamId)}" aria-hidden="true">${esc(initials(p.displayName))}</span>`;
   const ini = esc(initials(p.displayName));
   const img = p.avatarUrl ? `<img src="${imgSrc(p.avatarUrl)}" alt="" onerror="this.remove()">` : "";
   return `<span class="avatar ${cls}" style="--h:${hueOf(p.accountId || p.displayName)};position:relative" aria-hidden="true">${ini}${img}</span>`;
@@ -342,7 +352,7 @@ function render() {
     html += `<tr data-id="${esc(p.accountId)}" class="${isCol ? "collapsed" : ""}">
       <td><div class="person"><button class="grip" type="button" data-act="grip" title="Drag to reorder, or focus and press ↑ / ↓" aria-label="Reorder ${esc(p.displayName)}">⋮⋮</button>${avatarHTML(p)}<div style="min-width:0">
         <button class="pname ptoggle" type="button" data-act="toggle" aria-expanded="${!isCol}" title="${isCol ? "Expand" : "Collapse"}"><span class="chev" aria-hidden="true">▾</span>${esc(p.displayName)}</button>
-        ${p.email ? `<div class="pmail">${esc(p.email)}</div>` : ""}
+        ${isTeam(p) ? `<div class="pmail">Team · unassigned tickets</div>` : p.email ? `<div class="pmail">${esc(p.email)}</div>` : ""}
         <div class="pmeta" id="meta-${id}"></div>
         <div class="chips" id="chips-${id}"></div>
         <div class="pactions">
@@ -351,7 +361,7 @@ function render() {
         </div></div></div></td>
       <td id="tk-${id}"></td></tr>`;
   }
-  html += `<tr class="addrow"><td colspan="2"><button class="addbtn" type="button" id="addBtn"><span class="plus">+</span> Add person</button></td></tr>`;
+  html += `<tr class="addrow"><td colspan="2"><button class="addbtn" type="button" id="addBtn"><span class="plus">+</span> Add person or team</button></td></tr>`;
   $("#rows").innerHTML = html;
   people.forEach(p => { paintChips(p); renderTickets(p); });
   const n = people.length;
@@ -385,7 +395,7 @@ function renderTickets(p) {
   const iss = t.issues || [];
   if (meta) {
     const prog = iss.filter(i => i.cat === "indeterminate").length;
-    meta.textContent = `${iss.length}${t.more ? "+" : ""} ${showDone ? "tickets" : "open"}${doneN(iss) ? ` · ${doneN(iss)} done` : ""}${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP open` : ""}`;
+    meta.textContent = `${iss.length}${t.more ? "+" : ""} ${isTeam(p) ? "unassigned" : showDone ? "tickets" : "open"}${doneN(iss) ? ` · ${doneN(iss)} done` : ""}${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP open` : ""}`;
   }
   if (collapsed.has(p.accountId)) {
     const prog = iss.filter(i => i.cat === "indeterminate").length;
@@ -397,7 +407,7 @@ function renderTickets(p) {
   const shown = f && f.size ? iss.filter(i => f.has(projKey(i))) : iss;
   let h = "";
   if (t.state === "err") h += `<div class="cell-err" style="margin-bottom:6px"><span>Showing earlier results. ${esc(t.err.msg)}</span><button class="btn" type="button" data-act="retry">Try again</button></div>`;
-  if (!shown.length) h += `<div class="empty">No ${showDone ? "" : "open "}tickets assigned in ${f && f.size ? "the selected projects" : "these projects"}.</div>`;
+  if (!shown.length) h += `<div class="empty">No ${showDone ? "" : "open "}${isTeam(p) ? "unassigned tickets for this team" : "tickets assigned"} in ${f && f.size ? "the selected projects" : "these projects"}.</div>`;
   else h += `<div class="tickets">` + shown.map((i, n) =>
       `<a class="t${n && projKey(i) !== projKey(shown[n-1]) ? " newproj" : ""}" style="--ph:${projHue(i.key.split("-")[0])}" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.type)} · ${esc(i.summary)}">
         ${typeIcon(i)}<span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${esc(i.summary)}</span>${ageCell(i, p)}${spBadge(i)}</a>`).join("") + `</div>`;
@@ -573,7 +583,13 @@ function openModal(existing) {
   const searchUsers = debounce(async q => {
     if (!q.trim()) { st.userResults = []; st.err=""; paintResults(); return; }
     const seq = ++userSeq; st.loading = true; paintResults();
-    try { const r = await api("/api/users?q=" + encodeURIComponent(q.trim())); if (seq !== userSeq) return; st.userResults = r; st.err = ""; }
+    try {
+      const enc = encodeURIComponent(q.trim());
+      const [users, teams] = await Promise.all([api("/api/users?q=" + enc), api("/api/teams?q=" + enc).catch(() => [])]);
+      if (seq !== userSeq) return;
+      st.userResults = [...users, ...teams.slice(0, 10).map(t => ({ kind: "team", accountId: "team:" + t.teamId, teamId: t.teamId, displayName: t.displayName }))];
+      st.err = "";
+    }
     catch (e) { if (seq !== userSeq) return; st.err = e.msg; st.userResults = []; }
     st.loading = false; paintResults();
   }, 250);
@@ -585,12 +601,12 @@ function openModal(existing) {
   }, 200);
 
   function paint() {
-    $("#mtitle").textContent = existing ? `Projects for ${existing.displayName}` : (st.step === 1 ? "Add a person" : "Pick projects");
-    $("#msteps").textContent = existing ? "Leave empty to show tickets from every project." : `Step ${st.step} of 2 · ${st.step === 1 ? "Find someone in Jira" : "Choose which projects to track"}`;
+    $("#mtitle").textContent = existing ? `Projects for ${existing.displayName}` : (st.step === 1 ? "Add a person or team" : "Pick projects");
+    $("#msteps").textContent = existing ? "Leave empty to show tickets from every project." : `Step ${st.step} of 2 · ${st.step === 1 ? "Find a person or team in Jira" : "Choose which projects to track"}`;
     const body = $("#mbody"), foot = $("#mfoot");
     if (st.step === 1) {
-      body.innerHTML = `<label class="lbl" for="uq">Name or email</label>
-        <input type="search" id="uq" placeholder="Start typing a name…" autocomplete="off">
+      body.innerHTML = `<label class="lbl" for="uq">Person or team</label>
+        <input type="search" id="uq" placeholder="Name, email or team…" autocomplete="off">
         <div class="results" id="res"></div>`;
       foot.innerHTML = `<button class="btn" type="button" id="mcancel">Cancel</button>`;
       $("#mcancel").onclick = close;
@@ -610,6 +626,7 @@ function openModal(existing) {
       $("#msave").onclick = async () => {
         const btn = $("#msave"); btn.disabled = true; btn.textContent = "Saving…";
         const p = { accountId: st.person.accountId, displayName: st.person.displayName, email: st.person.email || "",
+                    ...(isTeam(st.person) ? { kind: "team", teamId: st.person.teamId } : {}),
                     avatarUrl: st.person.avatarUrl || "", projects: st.projects.map(x => ({key:x.key, name:x.name})),
                     addedAt: st.person.addedAt || Date.now() };
         try { await store.save(p); rememberProjects(p.projects); close(); delete tickets[p.accountId]; render(); loadTickets(p); }
@@ -647,10 +664,15 @@ function openModal(existing) {
     if (st.loading && !(st.step === 1 ? st.userResults : st.projResults).length) { el.innerHTML = `<div class="skel"></div><div class="skel" style="width:70%"></div>`; return; }
     if (st.step === 1) {
       const taken = new Set(people.map(p => p.accountId));
-      el.innerHTML = st.userResults.length ? st.userResults.map((u, i) => `
+      const row = (u, i) => `
         <button class="res" type="button" data-i="${i}" ${taken.has(u.accountId) ? "disabled" : ""}>
-          ${avatarHTML(u,"sm")}<span class="rn">${esc(u.displayName)}${u.email ? `<span class="rmail">${esc(u.email)}</span>` : ""}</span><span class="rk">${taken.has(u.accountId) ? "On board" : (u.active === false ? "Inactive" : "")}</span></button>`).join("")
-        : ($("#uq") && $("#uq").value.trim() && !st.loading ? `<div class="hint">No one in Jira matches that.</div>` : `<div class="hint">Search by name or email address.</div>`);
+          ${avatarHTML(u,"sm")}<span class="rn">${esc(u.displayName)}${isTeam(u) ? `<span class="rmail">Team · shows its unassigned tickets</span>` : u.email ? `<span class="rmail">${esc(u.email)}</span>` : ""}</span><span class="rk">${taken.has(u.accountId) ? "On board" : (u.active === false ? "Inactive" : "")}</span></button>`;
+      const ppl = st.userResults.map((u, i) => [u, i]).filter(([u]) => !isTeam(u));
+      const tms = st.userResults.map((u, i) => [u, i]).filter(([u]) => isTeam(u));
+      el.innerHTML = st.userResults.length
+        ? (ppl.length ? `<div class="rsec">People</div>` + ppl.map(([u, i]) => row(u, i)).join("") : "")
+          + (tms.length ? `<div class="rsec">Teams</div>` + tms.map(([u, i]) => row(u, i)).join("") : "")
+        : ($("#uq") && $("#uq").value.trim() && !st.loading ? `<div class="hint">No people or teams in Jira match that.</div>` : `<div class="hint">Search people by name or email, or teams by name.</div>`);
       el.querySelectorAll("[data-i]").forEach(b => b.onclick = () => { st.person = {...st.userResults[+b.dataset.i]}; st.step = 2; paint(); });
     } else {
       const sel = new Set(st.projects.map(x => x.key));
