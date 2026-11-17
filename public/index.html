@@ -288,7 +288,7 @@ function jqlFor(p) {
   const parts = isTeam(p)
     ? [`cf[10YYY] = "${String(p.teamId).replace(/"/g,'')}"`, "assignee is EMPTY"]
     : [`assignee = "${p.accountId.replace(/"/g,'')}"`];
-  if (p.projects && p.projects.length) parts.push(`project in (${p.projects.map(x => `"${x.key.replace(/"/g,'')}"`).join(", ")})`);
+  if (!isTeam(p) && p.projects && p.projects.length) parts.push(`project in (${p.projects.map(x => `"${x.key.replace(/"/g,'')}"`).join(", ")})`);
   parts.push(donePeriod ? `(statusCategory != Done OR statusCategoryChangedDate >= -${donePeriod}d)` : "statusCategory != Done");
   return parts.join(" AND ") + " ORDER BY updated DESC";
 }
@@ -356,7 +356,7 @@ function render() {
         <div class="pmeta" id="meta-${id}"></div>
         <div class="chips" id="chips-${id}"></div>
         <div class="pactions">
-          <button class="btn ghost" type="button" data-act="edit">Edit projects</button>
+          ${isTeam(p) ? "" : `<button class="btn ghost" type="button" data-act="edit">Edit projects</button>`}
           <button class="btn ghost danger" type="button" data-act="remove">Remove</button>
         </div></div></div></td>
       <td id="tk-${id}"></td></tr>`;
@@ -378,7 +378,7 @@ function paintChips(p) {
   const keys = (p.projects && p.projects.length) ? p.projects.map(x => x.key) : Object.keys(counts).sort();
   const f = filters.get(p.accountId) || new Set();
   let h = keys.map(k => `<button type="button" class="chip ${f.has(k) ? "on" : ""} ${f.size && !f.has(k) ? "off" : ""}" style="--ph:${projHue(k)}" data-act="filter" data-key="${esc(k)}" aria-pressed="${f.has(k)}" title="${esc(names[k] || k)}${f.has(k) ? " · click to show all" : " · show only this project"}">${esc(k)}${t && t.issues ? `<span class="cn">${counts[k] || 0}</span>` : ""}</button>`).join("");
-  if (!(p.projects && p.projects.length)) h = `<span class="chip all">All projects</span>` + h;
+  if (!isTeam(p) && !(p.projects && p.projects.length)) h = `<span class="chip all">All projects</span>` + h;
   el.innerHTML = h;
 }
 function renderTickets(p) {
@@ -673,7 +673,15 @@ function openModal(existing) {
         ? (ppl.length ? `<div class="rsec">People</div>` + ppl.map(([u, i]) => row(u, i)).join("") : "")
           + (tms.length ? `<div class="rsec">Teams</div>` + tms.map(([u, i]) => row(u, i)).join("") : "")
         : ($("#uq") && $("#uq").value.trim() && !st.loading ? `<div class="hint">No people or teams in Jira match that.</div>` : `<div class="hint">Search people by name or email, or teams by name.</div>`);
-      el.querySelectorAll("[data-i]").forEach(b => b.onclick = () => { st.person = {...st.userResults[+b.dataset.i]}; st.step = 2; paint(); });
+      el.querySelectorAll("[data-i]").forEach(b => b.onclick = async () => {
+        const u = st.userResults[+b.dataset.i];
+        if (!isTeam(u)) { st.person = {...u}; st.step = 2; paint(); return; }
+        // Teams always cover every project: add right away, no project step.
+        const p = { accountId: u.accountId, kind: "team", teamId: u.teamId, displayName: u.displayName, projects: [], addedAt: Date.now() };
+        b.disabled = true;
+        try { await store.save(p); close(); delete tickets[p.accountId]; render(); loadTickets(p); }
+        catch { b.disabled = false; st.err = "Couldn't add the team. Try again."; paintResults(); }
+      });
     } else {
       const sel = new Set(st.projects.map(x => x.key));
       el.innerHTML = st.projResults.length ? st.projResults.map((p, i) => `
