@@ -1,0 +1,10 @@
+# dependencies and build output
+node_modules/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# local data: people list used by `node server.js`
+people.json
+
+# OS / editor
+.DS_Store

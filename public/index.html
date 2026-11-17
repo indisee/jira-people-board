@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jira People Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: one roster table — person on the left, their open tickets on the right, add-row at the bottom. */
+:root{
+  --bg:#f5f7f8; --surface:#ffffff; --surface-2:#eef2f3; --line:#dbe2e5;
+  --fg:#16232a; --muted:#5b6b73; --accent:#0b6b73; --accent-fg:#ffffff; --accent-soft:#dff0f1;
+  --todo:#6b7a82; --todo-bg:#e9eef0; --prog:#1f5fbf; --prog-bg:#e2ecfb; --done:#1f7a45; --done-bg:#e1f3e8;
+  --danger:#b3261e; --danger-bg:#fbe9e7; --warn:#a15c00;
+  --f-display:"Space Grotesk",system-ui,sans-serif; --f-body:"IBM Plex Sans",system-ui,-apple-system,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --row-hover:#e2edef; --pt-sat:55%; --pt-l:95%; --pt-l-hover:90%; --radius:8px; --av-sat:45%; --av-bg-l:88%; --av-fg-l:28%;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1619; --surface:#151f23; --surface-2:#1b272c; --line:#2a383e;
+  --fg:#e3eaed; --muted:#93a4ab; --accent:#4fc1c9; --accent-fg:#06272a; --accent-soft:#143338;
+  --todo:#9aa9b0; --todo-bg:#232f34; --prog:#7fb0ff; --prog-bg:#17284a; --done:#6fd39a; --done-bg:#143323;
+  --danger:#ff8a80; --danger-bg:#3a1a18; --warn:#f5b85c; --row-hover:#243439; --pt-sat:30%; --pt-l:15%; --pt-l-hover:20%; --av-sat:40%; --av-bg-l:24%; --av-fg-l:80%; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1619; --surface:#151f23; --surface-2:#1b272c; --line:#2a383e;
+  --fg:#e3eaed; --muted:#93a4ab; --accent:#4fc1c9; --accent-fg:#06272a; --accent-soft:#143338;
+  --todo:#9aa9b0; --todo-bg:#232f34; --prog:#7fb0ff; --prog-bg:#17284a; --done:#6fd39a; --done-bg:#143323;
+  --danger:#ff8a80; --danger-bg:#3a1a18; --warn:#f5b85c; --row-hover:#243439; --pt-sat:30%; --pt-l:15%; --pt-l-hover:20%; --av-sat:40%; --av-bg-l:24%; --av-fg-l:80%; color-scheme:dark}
+
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-display);font-weight:600;font-size:1.6rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--muted);margin:2px 0 0;font-size:.9rem}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:6px;padding:6px 12px;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:4px 8px}
+.btn.ghost:hover{color:var(--fg);background:var(--surface-2)}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.toggle{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.9rem;cursor:pointer}
+select{font:inherit;font-size:.85rem;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg)}
+.stamp{color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+
+.banner{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.banner.err{border-color:var(--danger);background:var(--danger-bg)}
+
+.board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+thead th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding:10px 16px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+th.c-person{width:280px}
+tbody td{vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+
+.person{display:grid;grid-template-columns:14px 44px minmax(0,1fr);gap:10px;align-items:start}
+.avatar{--h:185;width:44px;height:44px;border-radius:50%;background:hsl(var(--h) var(--av-sat) var(--av-bg-l));color:hsl(var(--h) var(--av-sat) var(--av-fg-l));display:grid;place-items:center;font-family:var(--f-display);font-weight:600;overflow:hidden;flex:none}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.avatar.sm{width:28px;height:28px;font-size:.75rem}
+.pname{font-weight:600;font-size:1rem;overflow-wrap:anywhere}
+.pmeta{color:var(--muted);font-size:.8rem;margin-top:2px;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.chip{--ph:185;font-family:var(--f-mono);font-size:.72rem;background:hsl(var(--ph) var(--pt-sat) var(--pt-l));border:1px solid hsl(var(--ph) var(--pt-sat) var(--pt-l-hover));border-radius:4px;padding:2px 7px;color:var(--fg);display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+button.chip:hover{background:hsl(var(--ph) var(--pt-sat) var(--pt-l-hover))}
+.chip .cn{color:var(--muted);font-variant-numeric:tabular-nums}
+.chip.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.chip.off{opacity:.45}
+.chip.all{cursor:default;background:var(--surface-2);border-color:var(--line)}
+.chip.all{font-family:var(--f-body);color:var(--muted)}
+.pactions{display:flex;gap:2px;margin-top:8px;margin-left:-8px}
+
+.tickets{display:grid;gap:2px;min-width:0}
+.t{--ph:185;display:grid;grid-template-columns:16px 92px 96px minmax(0,1fr) 84px 30px;gap:10px;align-items:center;padding:6px 8px;border-radius:5px;text-decoration:none;color:inherit;background:hsl(var(--ph) var(--pt-sat) var(--pt-l))}
+.throw{display:flex;justify-content:space-between;gap:10px;padding-right:12px}
+.hcols{display:flex;gap:10px}
+.h-age{width:84px;text-align:right;white-space:nowrap;letter-spacing:.03em}
+.h-sp{width:30px;text-align:right}
+.age{display:flex;justify-content:flex-end;gap:4px;font-size:.78rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.age .ao{color:var(--muted);min-width:34px;text-align:right}
+.age .ao::after{content:" ·";color:var(--line)}
+.age .aa{color:var(--fg);font-weight:500;min-width:34px;text-align:right}
+.age .aa.old{color:var(--warn)}
+@media (max-width:720px){.hcols{display:none}}
+.sp{justify-self:end;min-width:22px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font-size:.75rem;font-weight:600;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums;color:var(--fg)}
+.sp.none{background:transparent;border-color:transparent;color:var(--muted);font-weight:400}
+.t.newproj{margin-top:8px}
+.t:hover{background:hsl(var(--ph) var(--pt-sat) var(--pt-l-hover))}
+.ti{position:relative;width:16px;height:16px;border-radius:3px;background:var(--tc);color:#fff;display:grid;place-items:center;font-size:9px;line-height:1;overflow:hidden}
+.ti img{position:absolute;inset:0;width:16px;height:16px;background:var(--surface)}
+.t .k{font-family:var(--f-mono);font-size:.8rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;border-radius:4px;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;justify-self:start;max-width:100%}
+.pill.new{color:var(--todo);background:var(--todo-bg)}
+.pill.indeterminate{color:var(--prog);background:var(--prog-bg)}
+.pill.done{color:var(--done);background:var(--done-bg)}
+.tfoot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:6px 8px 0;font-size:.8rem;color:var(--muted)}
+.tfoot a{color:var(--accent)}
+.empty{color:var(--muted);padding:5px 8px}
+.cell-err{color:var(--danger);background:var(--danger-bg);border-radius:6px;padding:8px 10px;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.skel{height:22px;border-radius:5px;background:linear-gradient(90deg,var(--surface-2),var(--line),var(--surface-2));background-size:200% 100%;animation:sh 1.2s infinite linear;margin:4px 8px}
+@keyframes sh{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
+
+.addrow td{padding:0}
+.addbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border:0;background:transparent;color:var(--accent);font-weight:600}
+.addbtn:hover{background:var(--accent-soft)}
+.plus{width:24px;height:24px;border-radius:50%;border:1.5px dashed currentColor;display:grid;place-items:center;font-size:1.05rem;line-height:1}
+.emptyrow td{color:var(--muted);text-align:center;padding:28px 16px}
+
+/* modal */
+.scrim{position:fixed;inset:0;background:rgb(10 20 24 / .45);display:grid;place-items:center;padding:16px;z-index:20}
+.modal{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;width:min(560px,100%);max-height:min(720px,calc(100vh - 32px));display:grid;grid-template-rows:auto minmax(0,1fr) auto;box-shadow:0 20px 50px rgb(0 0 0 / .25)}
+.mhead{padding:16px 18px 10px;border-bottom:1px solid var(--line)}
+.mhead h2{font-family:var(--f-display);font-size:1.15rem;margin:0}
+.steps{color:var(--muted);font-size:.8rem;margin-top:2px}
+.mbody{padding:14px 18px;overflow:auto;display:grid;gap:10px;align-content:start}
+.mfoot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+label.lbl{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+input[type=search],input[type=text]{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+input[type=search]:focus{border-color:var(--accent);outline:none}
+.results{display:grid;gap:2px}
+.res{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 8px;border-radius:6px;border:0;background:transparent;color:inherit;text-align:left;width:100%}
+.res:hover{background:var(--surface-2)}
+.res .rn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rmail{display:block;color:var(--muted);font-size:.78rem;overflow:hidden;text-overflow:ellipsis}
+.pmail{color:var(--muted);font-size:.78rem;overflow-wrap:anywhere}
+.res .rk{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.res.on{background:var(--accent-soft)}
+.check{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--line);display:grid;place-items:center;font-size:.75rem;color:var(--accent-fg)}
+.res.on .check{background:var(--accent);border-color:var(--accent)}
+.picked{display:flex;flex-wrap:wrap;gap:6px}
+.pchip{display:inline-flex;align-items:center;gap:4px;font-family:var(--f-mono);font-size:.75rem;background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:2px 4px 2px 8px}
+.pchip button{border:0;background:transparent;color:inherit;padding:0 4px;font-size:.9rem}
+.hint{color:var(--muted);font-size:.85rem}
+.grip{border:0;background:transparent;color:var(--muted);padding:0;width:14px;height:44px;cursor:grab;font-size:.85rem;letter-spacing:-3px;line-height:1;opacity:.45;border-radius:4px}
+tr:hover .grip,.grip:focus-visible{opacity:1}
+.grip:hover{color:var(--fg);background:var(--surface-2)}
+tr.collapsed .grip{height:28px}
+tr.dragging{opacity:.4}
+tr.drop-before td{box-shadow:inset 0 2px 0 var(--accent)}
+tr.drop-after td{box-shadow:inset 0 -2px 0 var(--accent)}
+.seg{display:inline-flex}
+.seg .btn:first-child{border-radius:6px 0 0 6px}
+.seg .btn:last-child{border-radius:0 6px 6px 0;margin-left:-1px}
+.seg .btn:hover{position:relative}
+.ptoggle{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--fg);padding:0;text-align:left;max-width:100%}
+.ptoggle:hover{color:var(--accent)}
+.chev{display:inline-block;color:var(--muted);font-size:.8rem;transition:transform .15s}
+tr.collapsed .chev{transform:rotate(-90deg)}
+tr.collapsed .chips,tr.collapsed .pactions,tr.collapsed .pmail{display:none}
+tr.collapsed td{padding-block:8px}
+tr.collapsed .avatar{width:28px;height:28px;font-size:.75rem}
+tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:center}
+.colsum{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;width:100%;border:0;background:transparent;color:var(--muted);text-align:left;padding:4px 8px;border-radius:5px;font-variant-numeric:tabular-nums}
+.colsum:hover{background:var(--row-hover);color:var(--fg)}
+.colkeys{font-family:var(--f-mono);font-size:.78rem;color:var(--accent);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.colhint{margin-left:auto;font-size:.8rem;color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.chev{transition:none}}
+.recent{display:flex;flex-wrap:wrap;gap:6px}
+.rchip{display:inline-flex;align-items:baseline;gap:6px;max-width:100%;border:1px dashed var(--line);background:transparent;color:var(--fg);border-radius:999px;padding:4px 10px}
+.rchip:hover{border-color:var(--accent)}
+.rchip.on{border-style:solid;border-color:var(--accent);background:var(--accent-soft)}
+.rchip .rkey{font-family:var(--f-mono);font-size:.75rem;color:var(--accent)}
+.rchip .rname{font-size:.8rem;color:var(--muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selperson{display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface-2);border-radius:8px}
+
+@media (max-width:720px){
+  thead{display:none}
+  table,tbody,tr,td{display:block;width:auto}
+  tbody td{border-bottom:0;padding:12px 14px 0}
+  tbody tr{border-bottom:1px solid var(--line);padding-bottom:12px}
+  .addrow{padding-bottom:0}.addrow td{padding:0}
+  .t{grid-template-columns:16px 80px minmax(0,1fr) auto;align-items:start}
+  .t .sp{grid-column:4;grid-row:1}
+  .t .age{grid-column:4;grid-row:2;align-self:start}
+  .t .ti{grid-row:1/3}
+  .t .k{grid-row:1/3}
+  .t .pill{grid-column:3;grid-row:1}
+  .t .s{grid-column:3;white-space:normal}
+}
+</style>
+<style>.avatar img{position:absolute;inset:0;border-radius:50%}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Jira People Board</h1>
+      <p class="sub" id="sub">Tickets assigned to the people you follow, across the projects you pick.</p>
+    </div>
+    <div class="tools">
+      <label class="toggle" for="donePeriod">Done tickets <select id="donePeriod"><option value="0">Hide</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select></label>
+      <span class="stamp" id="stamp"></span>
+      <span class="seg" role="group" aria-label="Fold people">
+        <button class="btn" id="foldAll" type="button" title="Collapse every person">▸ Collapse all</button><button class="btn" id="unfoldAll" type="button" title="Expand every person">▾ Expand all</button>
+      </span>
+      <button class="btn" id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <div id="banner" hidden></div>
+  <div class="board">
+    <table>
+      <thead><tr><th class="c-person">Person</th><th><span class="throw"><span>Assigned tickets</span><span class="hcols"><span class="h-age" title="How long the ticket has been open · how long it has been on this person">Open · Owned</span><span class="h-sp" title="Story points">SP</span></span></span></th></tr></thead>
+      <tbody id="rows">
+        <tr class="emptyrow"><td colspan="2">Loading your list…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div id="modalRoot"></div>
+
+<script>
+const MAX = 100;
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const initials = n => (n||"?").replace(/\(.*?\)/g,"").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+const domId = id => String(id).replace(/[^A-Za-z0-9_-]/g, "_");
+
+let people = [];               // [{accountId, displayName, email, avatarUrl, projects:[{key,name}], addedAt}]
+const tickets = {};            // accountId -> {state, issues, more, url, err}
+// Done tickets: hidden, or those moved to Done within the last N days.
+let donePeriod = 0;
+try { donePeriod = Number(localStorage.getItem("jpd.donePeriod")) || 0; } catch {}
+if (![0,7,14,30].includes(donePeriod)) donePeriod = 0;
+let showDone = donePeriod > 0;
+$("#donePeriod").value = String(donePeriod);
+let collapsed = new Set();
+try { collapsed = new Set(JSON.parse(localStorage.getItem("jpd.collapsed") || "[]")); } catch {}
+
+/* ---------- local API ---------- */
+// Runs inside the Tauri app (Rust commands) or in a browser against `node server.js`.
+const TAURI = window.__TAURI__ && window.__TAURI__.core;
+function imgSrc(url) {
+  return TAURI ? TAURI.convertFileSrc(url, "avatar") : "/api/avatar?u=" + encodeURIComponent(url);
+}
+function tauriCall(path, opts) {
+  const u = new URL(path, "http://app"), body = opts.body ? JSON.parse(opts.body) : {};
+  const q = u.searchParams.get("q") || "";
+  switch (u.pathname) {
+    case "/api/people": return opts.method === "PUT" ? TAURI.invoke("people_save", { list: body }) : TAURI.invoke("people_load");
+    case "/api/users": return TAURI.invoke("users_search", { q });
+    case "/api/projects": return TAURI.invoke("projects_search", { q });
+    case "/api/search": return TAURI.invoke("issues_search", { jql: body.jql, maxResults: body.maxResults, assignee: body.assignee });
+  }
+  return Promise.reject("Unknown request " + u.pathname);
+}
+async function api(path, opts = {}) {
+  if (TAURI) {
+    try { return await tauriCall(path, opts); }
+    catch (e) {
+      const m = String(e && e.message || e);
+      if (m.startsWith("AUTH:")) throw { msg: "Jira rejected the API token. Check ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN in ~/.release-script.env, then restart the app.", page: true };
+      if (m.startsWith("CONFIG:")) throw { msg: m.slice(7) + ". Fix it and restart the app.", page: true };
+      throw { msg: m };
+    }
+  }
+  let r;
+  try {
+    r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", ...(opts.headers||{}) } });
+  } catch { throw { msg: "The local server isn't running. Start it with: node server.js", page: true }; }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (r.status === 401 || r.status === 403) throw { msg: "Jira rejected the API token. Check ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN in ~/.release-script.env, then restart the server.", page: true };
+    throw { msg: body.message || `Request failed (${r.status})` };
+  }
+  return body;
+}
+const store = {
+  async init() { people = await api("/api/people"); /* file order is board order */ },
+  async persist() { await api("/api/people", { method: "PUT", body: JSON.stringify(people) }); },
+  async save(p) { const i = people.findIndex(x => x.accountId === p.accountId); if (i >= 0) people[i] = p; else people.push(p); await this.persist(); },
+  async remove(id) { people = people.filter(x => x.accountId !== id); await this.persist(); },
+};
+
+function jqlFor(p) {
+  const parts = [`assignee = "${p.accountId.replace(/"/g,'')}"`];
+  if (p.projects && p.projects.length) parts.push(`project in (${p.projects.map(x => `"${x.key.replace(/"/g,'')}"`).join(", ")})`);
+  parts.push(donePeriod ? `(statusCategory != Done OR statusCategoryChangedDate >= -${donePeriod}d)` : "statusCategory != Done");
+  return parts.join(" AND ") + " ORDER BY updated DESC";
+}
+// Each project gets its own steady hue; spread so similar keys still look different.
+function projHue(key){ return (hueOf(key) * 137) % 360; }
+// Sort by issue key: project key alphabetically, then issue number numerically (ABC-9 before ABC-10).
+function byKey(a, b) {
+  const [pa, na] = a.key.split("-"), [pb, nb] = b.key.split("-");
+  return pa.localeCompare(pb) || (Number(na) - Number(nb));
+}
+// Fallback type marks when Jira's own icon can't load: colour + glyph per issue type, like Jira's.
+function typeMark(type) {
+  const t = (type || "").toLowerCase();
+  if (/bug|defect|incident/.test(t)) return {c:"#e5493a", g:"●"};
+  if (/epic/.test(t)) return {c:"#904ee2", g:"⚡"};
+  if (/story/.test(t)) return {c:"#63ba3c", g:"▮"};
+  if (/sub/.test(t)) return {c:"#4bade8", g:"✓"};
+  if (/improvement|feature/.test(t)) return {c:"#63ba3c", g:"↑"};
+  if (/release/.test(t)) return {c:"#ff991f", g:"◆"};
+  return {c:"#4bade8", g:"✓"};
+}
+function typeIcon(i) {
+  const m = typeMark(i.type);
+  const img = i.icon ? `<img src="${imgSrc(i.icon)}" alt="" onerror="this.remove()">` : "";
+  return `<span class="ti" style="--tc:${m.c}" title="${esc(i.type)}" aria-label="${esc(i.type)}"><span class="tg">${m.g}</span>${img}</span>`;
+}
+async function loadTickets(p) {
+  tickets[p.accountId] = {...(tickets[p.accountId]||{}), state:"loading"};
+  renderTickets(p);
+  try {
+    const r = await api("/api/search", { method: "POST", body: JSON.stringify({ jql: jqlFor(p), maxResults: MAX, assignee: p.accountId }) });
+    const issues = r.issues.sort(byKey);
+    tickets[p.accountId] = { state:"ok", issues, more: r.more, url: r.url };
+    setStamp();
+  } catch (e) {
+    tickets[p.accountId] = { ...(tickets[p.accountId]||{}), state:"err", err:e };
+    if (e.page) showBanner(e);
+  }
+  renderTickets(p);
+}
+function setStamp(){ $("#stamp").textContent = "Updated " + new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}); }
+async function runPool(list, fn, n=4) {
+  const q = list.slice(); await Promise.all(Array.from({length:Math.min(n,q.length)}, async () => { while (q.length) await fn(q.shift()); }));
+}
+function loadAll() { hideBanner(); runPool(people, loadTickets); }
+
+/* ---------- rendering ---------- */
+function hueOf(s){ let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
+function avatarHTML(p, cls="") {
+  const ini = esc(initials(p.displayName));
+  const img = p.avatarUrl ? `<img src="${imgSrc(p.avatarUrl)}" alt="" onerror="this.remove()">` : "";
+  return `<span class="avatar ${cls}" style="--h:${hueOf(p.accountId || p.displayName)};position:relative" aria-hidden="true">${ini}${img}</span>`;
+}
+function render() {
+  let html = "";
+  if (!people.length) html += `<tr class="emptyrow"><td colspan="2">No one on the board yet. Add a person and pick the projects to track their tickets.</td></tr>`;
+  for (const p of people) {
+    const id = esc(domId(p.accountId));
+    const isCol = collapsed.has(p.accountId);
+    html += `<tr data-id="${esc(p.accountId)}" class="${isCol ? "collapsed" : ""}">
+      <td><div class="person"><button class="grip" type="button" data-act="grip" title="Drag to reorder, or focus and press ↑ / ↓" aria-label="Reorder ${esc(p.displayName)}">⋮⋮</button>${avatarHTML(p)}<div style="min-width:0">
+        <button class="pname ptoggle" type="button" data-act="toggle" aria-expanded="${!isCol}" title="${isCol ? "Expand" : "Collapse"}"><span class="chev" aria-hidden="true">▾</span>${esc(p.displayName)}</button>
+        ${p.email ? `<div class="pmail">${esc(p.email)}</div>` : ""}
+        <div class="pmeta" id="meta-${id}"></div>
+        <div class="chips" id="chips-${id}"></div>
+        <div class="pactions">
+          <button class="btn ghost" type="button" data-act="edit">Edit projects</button>
+          <button class="btn ghost danger" type="button" data-act="remove">Remove</button>
+        </div></div></div></td>
+      <td id="tk-${id}"></td></tr>`;
+  }
+  html += `<tr class="addrow"><td colspan="2"><button class="addbtn" type="button" id="addBtn"><span class="plus">+</span> Add person</button></td></tr>`;
+  $("#rows").innerHTML = html;
+  people.forEach(p => { paintChips(p); renderTickets(p); });
+  const n = people.length;
+  $("#sub").textContent = n ? `${n} ${n===1?"person":"people"} · ${showDone ? `open + done in last ${donePeriod} days` : "open tickets"}, sorted by key.` : "Tickets assigned to the people you follow, across the projects you pick.";
+}
+// Project chips under the avatar: same tint as the ticket rows, click to filter this person's list.
+const filters = new Map();   // accountId -> Set of project keys shown (empty = all)
+function projKey(i){ return i.key.split("-")[0]; }
+function paintChips(p) {
+  const el = document.getElementById("chips-" + domId(p.accountId)); if (!el) return;
+  const t = tickets[p.accountId], iss = (t && t.issues) || [];
+  const counts = {}; for (const i of iss) counts[projKey(i)] = (counts[projKey(i)] || 0) + 1;
+  const names = {}; for (const x of (p.projects || [])) names[x.key] = x.name;
+  const keys = (p.projects && p.projects.length) ? p.projects.map(x => x.key) : Object.keys(counts).sort();
+  const f = filters.get(p.accountId) || new Set();
+  let h = keys.map(k => `<button type="button" class="chip ${f.has(k) ? "on" : ""} ${f.size && !f.has(k) ? "off" : ""}" style="--ph:${projHue(k)}" data-act="filter" data-key="${esc(k)}" aria-pressed="${f.has(k)}" title="${esc(names[k] || k)}${f.has(k) ? " · click to show all" : " · show only this project"}">${esc(k)}${t && t.issues ? `<span class="cn">${counts[k] || 0}</span>` : ""}</button>`).join("");
+  if (!(p.projects && p.projects.length)) h = `<span class="chip all">All projects</span>` + h;
+  el.innerHTML = h;
+}
+function renderTickets(p) {
+  paintChips(p);
+  const cell = document.getElementById("tk-" + domId(p.accountId));
+  const meta = document.getElementById("meta-" + domId(p.accountId));
+  if (!cell) return;
+  const t = tickets[p.accountId];
+  if (!t || (t.state === "loading" && !t.issues)) { cell.innerHTML = `<div class="skel"></div><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div>`; return; }
+  if (t.state === "err" && !t.issues) {
+    cell.innerHTML = `<div class="cell-err"><span>${esc(t.err.msg)}</span><button class="btn" type="button" data-act="retry">Try again</button></div>`;
+    if (meta) meta.textContent = ""; return;
+  }
+  const iss = t.issues || [];
+  if (meta) {
+    const prog = iss.filter(i => i.cat === "indeterminate").length;
+    meta.textContent = `${iss.length}${t.more ? "+" : ""} ${showDone ? "tickets" : "open"}${doneN(iss) ? ` · ${doneN(iss)} done` : ""}${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP open` : ""}`;
+  }
+  if (collapsed.has(p.accountId)) {
+    const prog = iss.filter(i => i.cat === "indeterminate").length;
+    const keys = iss.slice(0, 6).map(i => esc(i.key)).join(", ");
+    cell.innerHTML = `<button class="colsum" type="button" data-act="toggle">${iss.length ? `${iss.length}${t.more ? "+" : ""} tickets${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP` : ""} <span class="colkeys">${keys}${iss.length > 6 ? "…" : ""}</span>` : "No tickets"} <span class="colhint">Show</span></button>`;
+    return;
+  }
+  const f = filters.get(p.accountId);
+  const shown = f && f.size ? iss.filter(i => f.has(projKey(i))) : iss;
+  let h = "";
+  if (t.state === "err") h += `<div class="cell-err" style="margin-bottom:6px"><span>Showing earlier results. ${esc(t.err.msg)}</span><button class="btn" type="button" data-act="retry">Try again</button></div>`;
+  if (!shown.length) h += `<div class="empty">No ${showDone ? "" : "open "}tickets assigned in ${f && f.size ? "the selected projects" : "these projects"}.</div>`;
+  else h += `<div class="tickets">` + shown.map((i, n) =>
+      `<a class="t${n && projKey(i) !== projKey(shown[n-1]) ? " newproj" : ""}" style="--ph:${projHue(i.key.split("-")[0])}" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.type)} · ${esc(i.summary)}">
+        ${typeIcon(i)}<span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${esc(i.summary)}</span>${ageCell(i, p)}${spBadge(i)}</a>`).join("") + `</div>`;
+  if (t.more || (iss.length && t.url)) h += `<div class="tfoot"><span>${t.more ? `Showing the ${MAX} most recently updated.` : ""}</span>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">Open in Jira ↗</a>` : ""}</div>`;
+  cell.innerHTML = h;
+}
+function showBanner(info) {
+  const b = $("#banner"); b.className = "banner err"; b.hidden = false;
+  b.innerHTML = `<span>${esc(info.msg)}</span><button class="btn" type="button" id="bannerBtn">Try again</button>`;
+  $("#bannerBtn").onclick = () => boot();
+}
+function hideBanner(){ $("#banner").hidden = true; }
+
+/* ---------- reorder: drag the ⋮⋮ handle, or focus it and use ↑ / ↓ ---------- */
+let dragId = null;
+async function movePerson(id, toIndex) {
+  const from = people.findIndex(p => p.accountId === id);
+  if (from < 0) return;
+  toIndex = Math.max(0, Math.min(people.length - 1, toIndex));
+  if (from === toIndex) return;
+  const [p] = people.splice(from, 1); people.splice(toIndex, 0, p);
+  render();
+  try { await store.persist(); } catch (e) { showBanner({msg: "Couldn't save the new order: " + (e.msg || "server error")}); }
+}
+const rowsEl = $("#rows");
+rowsEl.addEventListener("pointerdown", e => {
+  const g = e.target.closest(".grip"); if (!g) return;
+  const tr = g.closest("tr[data-id]"); tr.draggable = true;
+});
+rowsEl.addEventListener("dragstart", e => {
+  const tr = e.target.closest && e.target.closest("tr[data-id]"); if (!tr || !tr.draggable) return;
+  dragId = tr.dataset.id; tr.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  try { e.dataTransfer.setData("text/plain", dragId); } catch {}
+});
+function clearDrop(){ rowsEl.querySelectorAll(".drop-before,.drop-after").forEach(r => r.classList.remove("drop-before","drop-after")); }
+rowsEl.addEventListener("dragover", e => {
+  if (!dragId) return;
+  const tr = e.target.closest("tr[data-id]"); if (!tr || tr.dataset.id === dragId) { clearDrop(); return; }
+  e.preventDefault(); e.dataTransfer.dropEffect = "move";
+  const r = tr.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2;
+  clearDrop(); tr.classList.add(before ? "drop-before" : "drop-after");
+});
+rowsEl.addEventListener("drop", e => {
+  if (!dragId) return;
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  e.preventDefault();
+  const before = tr.classList.contains("drop-before");
+  const ids = people.map(p => p.accountId).filter(id => id !== dragId);
+  let to = ids.indexOf(tr.dataset.id) + (before ? 0 : 1);
+  const id = dragId; dragId = null; clearDrop();
+  movePerson(id, to);
+});
+rowsEl.addEventListener("dragend", e => {
+  dragId = null; clearDrop();
+  rowsEl.querySelectorAll("tr[draggable]").forEach(r => { r.draggable = false; r.classList.remove("dragging"); });
+});
+rowsEl.addEventListener("keydown", e => {
+  const g = e.target.closest(".grip"); if (!g || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+  e.preventDefault();
+  const id = g.closest("tr[data-id]").dataset.id, i = people.findIndex(p => p.accountId === id);
+  movePerson(id, i + (e.key === "ArrowUp" ? -1 : 1)).then(() => {
+    const ng = rowsEl.querySelector(`tr[data-id="${CSS.escape(id)}"] .grip`); if (ng) ng.focus();
+  });
+});
+
+/* In the app, open Jira links in the default browser instead of inside the window. */
+if (TAURI) document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest('a[href^="http"]'); if (!a) return;
+  e.preventDefault();
+  TAURI.invoke("plugin:opener|open_url", { url: a.href })
+    .catch(err => showBanner({ msg: "Couldn't open the link in your browser: " + String(err) }));
+});
+
+/* ---------- events ---------- */
+$("#rows").addEventListener("click", async e => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  if (btn.id === "addBtn") return openModal();
+  const tr = btn.closest("tr[data-id]"); if (!tr) return;
+  const p = people.find(x => x.accountId === tr.dataset.id); if (!p) return;
+  const act = btn.dataset.act;
+  if (act === "toggle") {
+    if (collapsed.has(p.accountId)) collapsed.delete(p.accountId); else collapsed.add(p.accountId);
+    try { localStorage.setItem("jpd.collapsed", JSON.stringify([...collapsed])); } catch {}
+    render(); return;
+  }
+  if (act === "filter") {
+    const f = filters.get(p.accountId) || new Set(), k = btn.dataset.key;
+    if (f.has(k)) f.delete(k); else f.add(k);
+    filters.set(p.accountId, f); renderTickets(p); return;
+  }
+  if (act === "edit") openModal(p);
+  else if (act === "retry") loadTickets(p);
+  else if (act === "remove") {
+    if (btn.dataset.confirm) {
+      try { await store.remove(p.accountId); delete tickets[p.accountId]; render(); } catch { btn.textContent = "Couldn't remove"; }
+    } else { btn.dataset.confirm = "1"; btn.textContent = "Click to confirm"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.confirm; btn.textContent = "Remove"; } }, 3500); }
+  }
+});
+$("#refresh").onclick = () => loadAll();
+function setAllCollapsed(on) {
+  collapsed = on ? new Set(people.map(p => p.accountId)) : new Set();
+  try { localStorage.setItem("jpd.collapsed", JSON.stringify([...collapsed])); } catch {}
+  render();
+}
+$("#foldAll").onclick = () => setAllCollapsed(true);
+$("#unfoldAll").onclick = () => setAllCollapsed(false);
+// Ticket age: time since created, and time since it was last assigned to this person.
+const DAY = 864e5;
+function toMs(v){ return typeof v === "number" ? v : Date.parse(v); }
+function dur(ms) {
+  const d = ms / DAY;
+  if (!(d >= 0)) return "–";
+  return Math.floor(d) + "d";
+}
+function longDur(ms){ const d = Math.floor(ms / DAY); return d < 1 ? "less than a day" : d === 1 ? "1 day" : d + " days"; }
+function ageCell(i, p) {
+  const now = Date.now(), c = toMs(i.created), a = toMs(i.assignedAt);
+  if (!c) return `<span class="age"></span>`;
+  const day = ms => new Date(ms).toLocaleDateString([], {day:"numeric", month:"short", year:"numeric"});
+  let tip = `Open ${longDur(now - c)} (created ${day(c)})`;
+  if (a) tip += ` · On ${p.displayName} ${longDur(now - a)} (since ${day(a)}${i.assignedFromHistory ? "" : ", assigned at creation"})`;
+  const stale = a && i.cat !== "done" && now - a > 30 * DAY;
+  return `<span class="age" title="${esc(tip)}"><span class="ao">${dur(now - c)}</span><span class="aa${stale ? " old" : ""}">${a ? dur(now - a) : "–"}</span></span>`;
+}
+function fmtSp(n){ return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""); }
+function spBadge(i){ return i.sp == null ? `<span class="sp none" title="No story points">–</span>` : `<span class="sp" title="${fmtSp(i.sp)} story points">${fmtSp(i.sp)}</span>`; }
+function spSum(iss){ const w = iss.filter(i => i.sp != null && i.cat !== "done"); return {sum: w.reduce((a,i) => a + i.sp, 0), n: w.length}; }
+function doneN(iss){ return iss.filter(i => i.cat === "done").length; }
+$("#donePeriod").onchange = e => {
+  donePeriod = Number(e.target.value) || 0; showDone = donePeriod > 0;
+  try { localStorage.setItem("jpd.donePeriod", String(donePeriod)); } catch {}
+  render(); loadAll();
+};
+setInterval(() => { if (!document.hidden && people.length) loadAll(); }, 5*60*1000);
+
+/* ---------- recent projects: last picks first, then the ones most used on the board ---------- */
+function rememberProjects(list) {
+  if (!list || !list.length) return;
+  let rec = [];
+  try { rec = JSON.parse(localStorage.getItem("jpd.recentProjects") || "[]"); } catch {}
+  const keys = new Set(list.map(x => x.key));
+  rec = [...list.map(x => ({key:x.key, name:x.name})), ...rec.filter(x => !keys.has(x.key))].slice(0, 20);
+  try { localStorage.setItem("jpd.recentProjects", JSON.stringify(rec)); } catch {}
+}
+function recentProjects() {
+  let rec = [];
+  try { rec = JSON.parse(localStorage.getItem("jpd.recentProjects") || "[]"); } catch {}
+  const count = {}, names = {};
+  for (const p of people) for (const x of (p.projects || [])) { count[x.key] = (count[x.key] || 0) + 1; names[x.key] = x.name; }
+  const out = [], seen = new Set();
+  for (const x of rec) if (!seen.has(x.key)) { seen.add(x.key); out.push(x); }
+  for (const k of Object.keys(count).sort((a, b) => count[b] - count[a])) if (!seen.has(k)) { seen.add(k); out.push({key:k, name:names[k]}); }
+  return out.slice(0, 5);
+}
+
+/* ---------- add / edit modal ---------- */
+function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+function openModal(existing) {
+  const st = { step: existing ? 2 : 1, person: existing ? {...existing} : null,
+               projects: existing ? [...(existing.projects||[])] : [], userResults: [], projResults: [], loading:false, err:"" };
+  const root = $("#modalRoot");
+  root.innerHTML = `<div class="scrim" id="scrim"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle">
+    <div class="mhead"><h2 id="mtitle"></h2><div class="steps" id="msteps"></div></div>
+    <div class="mbody" id="mbody"></div>
+    <div class="mfoot" id="mfoot"></div></div></div>`;
+  const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  $("#scrim").addEventListener("mousedown", e => { if (e.target.id === "scrim") close(); });
+
+  let userSeq = 0, projSeq = 0;
+  const searchUsers = debounce(async q => {
+    if (!q.trim()) { st.userResults = []; st.err=""; paintResults(); return; }
+    const seq = ++userSeq; st.loading = true; paintResults();
+    try { const r = await api("/api/users?q=" + encodeURIComponent(q.trim())); if (seq !== userSeq) return; st.userResults = r; st.err = ""; }
+    catch (e) { if (seq !== userSeq) return; st.err = e.msg; st.userResults = []; }
+    st.loading = false; paintResults();
+  }, 250);
+  const searchProjects = debounce(async q => {
+    const seq = ++projSeq; st.loading = true; paintResults();
+    try { const r = await api("/api/projects?q=" + encodeURIComponent(q.trim())); if (seq !== projSeq) return; st.projResults = r; st.err = ""; }
+    catch (e) { if (seq !== projSeq) return; st.err = e.msg; st.projResults = []; }
+    st.loading = false; paintResults();
+  }, 200);
+
+  function paint() {
+    $("#mtitle").textContent = existing ? `Projects for ${existing.displayName}` : (st.step === 1 ? "Add a person" : "Pick projects");
+    $("#msteps").textContent = existing ? "Leave empty to show tickets from every project." : `Step ${st.step} of 2 · ${st.step === 1 ? "Find someone in Jira" : "Choose which projects to track"}`;
+    const body = $("#mbody"), foot = $("#mfoot");
+    if (st.step === 1) {
+      body.innerHTML = `<label class="lbl" for="uq">Name or email</label>
+        <input type="search" id="uq" placeholder="Start typing a name…" autocomplete="off">
+        <div class="results" id="res"></div>`;
+      foot.innerHTML = `<button class="btn" type="button" id="mcancel">Cancel</button>`;
+      $("#mcancel").onclick = close;
+      const inp = $("#uq"); inp.focus(); inp.oninput = () => searchUsers(inp.value);
+      paintResults();
+    } else {
+      body.innerHTML = `${existing ? "" : `<div class="selperson">${avatarHTML(st.person,"sm")}<strong>${esc(st.person.displayName)}</strong></div>`}
+        <div id="recentWrap"></div>
+        <label class="lbl">Selected projects</label>
+        <div class="picked" id="picked"></div>
+        <label class="lbl" for="pq">Find projects</label>
+        <input type="search" id="pq" placeholder="Project name or key" autocomplete="off">
+        <div class="results" id="res"></div>`;
+      foot.innerHTML = `${existing ? "" : `<button class="btn" type="button" id="mback">Back</button>`}<button class="btn" type="button" id="mcancel">Cancel</button><button class="btn primary" type="button" id="msave">${existing ? "Save" : "Add to board"}</button>`;
+      $("#mcancel").onclick = close;
+      if ($("#mback")) $("#mback").onclick = () => { st.step = 1; st.person = null; paint(); };
+      $("#msave").onclick = async () => {
+        const btn = $("#msave"); btn.disabled = true; btn.textContent = "Saving…";
+        const p = { accountId: st.person.accountId, displayName: st.person.displayName, email: st.person.email || "",
+                    avatarUrl: st.person.avatarUrl || "", projects: st.projects.map(x => ({key:x.key, name:x.name})),
+                    addedAt: st.person.addedAt || Date.now() };
+        try { await store.save(p); rememberProjects(p.projects); close(); delete tickets[p.accountId]; render(); loadTickets(p); }
+        catch (e) { btn.disabled = false; btn.textContent = "Couldn't save. Try again"; }
+      };
+      const inp = $("#pq"); inp.oninput = () => searchProjects(inp.value);
+      paintPicked(); searchProjects("");
+    }
+  }
+  function paintRecent() {
+    const el = $("#recentWrap"); if (!el) return;
+    const rec = recentProjects();
+    if (!rec.length) { el.innerHTML = ""; return; }
+    const sel = new Set(st.projects.map(x => x.key));
+    el.innerHTML = `<label class="lbl">Recent projects</label>
+      <div class="recent">${rec.map((x, i) => `<button type="button" class="rchip ${sel.has(x.key) ? "on" : ""}" data-r="${i}" aria-pressed="${sel.has(x.key)}" title="${esc(x.name)}">
+        <span class="rkey">${esc(x.key)}</span><span class="rname">${esc(x.name)}</span></button>`).join("")}</div>`;
+    el.querySelectorAll("[data-r]").forEach(b => b.onclick = () => {
+      const x = rec[+b.dataset.r];
+      if (sel.has(x.key)) st.projects = st.projects.filter(y => y.key !== x.key); else st.projects.push({key:x.key, name:x.name});
+      paintPicked(); paintResults();
+    });
+  }
+  function paintPicked() {
+    paintRecent();
+    const el = $("#picked"); if (!el) return;
+    el.innerHTML = st.projects.length
+      ? st.projects.map(x => `<span class="pchip" title="${esc(x.name)}">${esc(x.key)}<button type="button" data-rm="${esc(x.key)}" aria-label="Remove ${esc(x.key)}">×</button></span>`).join("")
+      : `<span class="hint">None yet. With no projects selected, the board shows tickets from every project.</span>`;
+    el.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { st.projects = st.projects.filter(x => x.key !== b.dataset.rm); paintPicked(); paintResults(); });
+  }
+  function paintResults() {
+    const el = $("#res"); if (!el) return;
+    if (st.err) { el.innerHTML = `<div class="cell-err">${esc(st.err)}</div>`; return; }
+    if (st.loading && !(st.step === 1 ? st.userResults : st.projResults).length) { el.innerHTML = `<div class="skel"></div><div class="skel" style="width:70%"></div>`; return; }
+    if (st.step === 1) {
+      const taken = new Set(people.map(p => p.accountId));
+      el.innerHTML = st.userResults.length ? st.userResults.map((u, i) => `
+        <button class="res" type="button" data-i="${i}" ${taken.has(u.accountId) ? "disabled" : ""}>
+          ${avatarHTML(u,"sm")}<span class="rn">${esc(u.displayName)}${u.email ? `<span class="rmail">${esc(u.email)}</span>` : ""}</span><span class="rk">${taken.has(u.accountId) ? "On board" : (u.active === false ? "Inactive" : "")}</span></button>`).join("")
+        : ($("#uq") && $("#uq").value.trim() && !st.loading ? `<div class="hint">No one in Jira matches that.</div>` : `<div class="hint">Search by name or email address.</div>`);
+      el.querySelectorAll("[data-i]").forEach(b => b.onclick = () => { st.person = {...st.userResults[+b.dataset.i]}; st.step = 2; paint(); });
+    } else {
+      const sel = new Set(st.projects.map(x => x.key));
+      el.innerHTML = st.projResults.length ? st.projResults.map((p, i) => `
+        <button class="res ${sel.has(p.key) ? "on" : ""}" type="button" data-i="${i}" aria-pressed="${sel.has(p.key)}">
+          <span class="check">${sel.has(p.key) ? "✓" : ""}</span><span class="rn">${esc(p.name)}</span><span class="rk">${esc(p.key)}</span></button>`).join("")
+        : (!st.loading ? `<div class="hint">No projects match that.</div>` : "");
+      el.querySelectorAll("[data-i]").forEach(b => b.onclick = () => {
+        const p = st.projResults[+b.dataset.i];
+        if (sel.has(p.key)) st.projects = st.projects.filter(x => x.key !== p.key); else st.projects.push({key:p.key, name:p.name});
+        paintPicked(); paintResults();
+      });
+    }
+  }
+  paint();
+}
+
+/* ---------- boot ---------- */
+async function boot() {
+  hideBanner();
+  try { await store.init(); } catch (e) { render(); showBanner(e); return; }
+  render(); loadAll();
+}
+boot();
+</script>
+</body>
+</html>

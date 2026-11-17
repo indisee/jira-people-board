@@ -1,0 +1,15 @@
+{
+  "name": "jira-people-board",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "build": "tauri build",
+    "build:dev": "tauri build --debug --config src-tauri/tauri.dev.conf.json",
+    "serve": "node server.js"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.9.6"
+  }
+}

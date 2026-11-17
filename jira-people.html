@@ -1,0 +1,524 @@
+<title>Jira People Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: one roster table — person on the left, their open tickets on the right, add-row at the bottom. */
+:root{
+  --bg:#f5f7f8; --surface:#ffffff; --surface-2:#eef2f3; --line:#dbe2e5;
+  --fg:#16232a; --muted:#5b6b73; --accent:#0b6b73; --accent-fg:#ffffff; --accent-soft:#dff0f1;
+  --todo:#6b7a82; --todo-bg:#e9eef0; --prog:#1f5fbf; --prog-bg:#e2ecfb; --done:#1f7a45; --done-bg:#e1f3e8;
+  --danger:#b3261e; --danger-bg:#fbe9e7;
+  --f-display:"Space Grotesk",system-ui,sans-serif; --f-body:"IBM Plex Sans",system-ui,-apple-system,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --radius:8px; --av-sat:45%; --av-bg-l:88%; --av-fg-l:28%;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1619; --surface:#151f23; --surface-2:#1b272c; --line:#2a383e;
+  --fg:#e3eaed; --muted:#93a4ab; --accent:#4fc1c9; --accent-fg:#06272a; --accent-soft:#143338;
+  --todo:#9aa9b0; --todo-bg:#232f34; --prog:#7fb0ff; --prog-bg:#17284a; --done:#6fd39a; --done-bg:#143323;
+  --danger:#ff8a80; --danger-bg:#3a1a18; --av-sat:40%; --av-bg-l:24%; --av-fg-l:80%; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1619; --surface:#151f23; --surface-2:#1b272c; --line:#2a383e;
+  --fg:#e3eaed; --muted:#93a4ab; --accent:#4fc1c9; --accent-fg:#06272a; --accent-soft:#143338;
+  --todo:#9aa9b0; --todo-bg:#232f34; --prog:#7fb0ff; --prog-bg:#17284a; --done:#6fd39a; --done-bg:#143323;
+  --danger:#ff8a80; --danger-bg:#3a1a18; --av-sat:40%; --av-bg-l:24%; --av-fg-l:80%; color-scheme:dark}
+
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-display);font-weight:600;font-size:1.6rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--muted);margin:2px 0 0;font-size:.9rem}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:6px;padding:6px 12px;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:4px 8px}
+.btn.ghost:hover{color:var(--fg);background:var(--surface-2)}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.toggle{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.9rem;cursor:pointer}
+.stamp{color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+
+.banner{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.banner.err{border-color:var(--danger);background:var(--danger-bg)}
+
+.board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+thead th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding:10px 16px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+th.c-person{width:280px}
+tbody td{vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+
+.person{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:start}
+.avatar{--h:185;width:44px;height:44px;border-radius:50%;background:hsl(var(--h) var(--av-sat) var(--av-bg-l));color:hsl(var(--h) var(--av-sat) var(--av-fg-l));display:grid;place-items:center;font-family:var(--f-display);font-weight:600;overflow:hidden;flex:none}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.avatar.sm{width:28px;height:28px;font-size:.75rem}
+.pname{font-weight:600;font-size:1rem;overflow-wrap:anywhere}
+.pmeta{color:var(--muted);font-size:.8rem;margin-top:2px;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.chip{font-family:var(--f-mono);font-size:.72rem;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--fg)}
+.chip.all{font-family:var(--f-body);color:var(--muted)}
+.pactions{display:flex;gap:2px;margin-top:8px;margin-left:-8px}
+
+.tickets{display:grid;gap:2px;max-height:420px;overflow:auto;min-width:0}
+.t{display:grid;grid-template-columns:96px 88px minmax(0,1fr);gap:10px;align-items:baseline;padding:5px 8px;border-radius:5px;text-decoration:none;color:inherit}
+.t:hover{background:var(--surface-2)}
+.t .k{font-family:var(--f-mono);font-size:.8rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;border-radius:4px;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;justify-self:start;max-width:100%}
+.pill.new{color:var(--todo);background:var(--todo-bg)}
+.pill.indeterminate{color:var(--prog);background:var(--prog-bg)}
+.pill.done{color:var(--done);background:var(--done-bg)}
+.tfoot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:6px 8px 0;font-size:.8rem;color:var(--muted)}
+.tfoot a{color:var(--accent)}
+.empty{color:var(--muted);padding:5px 8px}
+.cell-err{color:var(--danger);background:var(--danger-bg);border-radius:6px;padding:8px 10px;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.skel{height:22px;border-radius:5px;background:linear-gradient(90deg,var(--surface-2),var(--line),var(--surface-2));background-size:200% 100%;animation:sh 1.2s infinite linear;margin:4px 8px}
+@keyframes sh{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
+
+.addrow td{padding:0}
+.addbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border:0;background:transparent;color:var(--accent);font-weight:600}
+.addbtn:hover{background:var(--accent-soft)}
+.plus{width:24px;height:24px;border-radius:50%;border:1.5px dashed currentColor;display:grid;place-items:center;font-size:1.05rem;line-height:1}
+.emptyrow td{color:var(--muted);text-align:center;padding:28px 16px}
+
+/* modal */
+.scrim{position:fixed;inset:0;background:rgb(10 20 24 / .45);display:grid;place-items:center;padding:16px;z-index:20}
+.modal{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;width:min(560px,100%);max-height:min(720px,calc(100vh - 32px));display:grid;grid-template-rows:auto minmax(0,1fr) auto;box-shadow:0 20px 50px rgb(0 0 0 / .25)}
+.mhead{padding:16px 18px 10px;border-bottom:1px solid var(--line)}
+.mhead h2{font-family:var(--f-display);font-size:1.15rem;margin:0}
+.steps{color:var(--muted);font-size:.8rem;margin-top:2px}
+.mbody{padding:14px 18px;overflow:auto;display:grid;gap:10px;align-content:start}
+.mfoot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+label.lbl{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+input[type=search],input[type=text]{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+input[type=search]:focus{border-color:var(--accent);outline:none}
+.results{display:grid;gap:2px}
+.res{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 8px;border-radius:6px;border:0;background:transparent;color:inherit;text-align:left;width:100%}
+.res:hover{background:var(--surface-2)}
+.res .rn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rmail{display:block;color:var(--muted);font-size:.78rem;overflow:hidden;text-overflow:ellipsis}
+.pmail{color:var(--muted);font-size:.78rem;overflow-wrap:anywhere}
+.res .rk{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.res.on{background:var(--accent-soft)}
+.check{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--line);display:grid;place-items:center;font-size:.75rem;color:var(--accent-fg)}
+.res.on .check{background:var(--accent);border-color:var(--accent)}
+.picked{display:flex;flex-wrap:wrap;gap:6px}
+.pchip{display:inline-flex;align-items:center;gap:4px;font-family:var(--f-mono);font-size:.75rem;background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:2px 4px 2px 8px}
+.pchip button{border:0;background:transparent;color:inherit;padding:0 4px;font-size:.9rem}
+.hint{color:var(--muted);font-size:.85rem}
+.selperson{display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface-2);border-radius:8px}
+
+@media (max-width:720px){
+  thead{display:none}
+  table,tbody,tr,td{display:block;width:auto}
+  tbody td{border-bottom:0;padding:12px 14px 0}
+  tbody tr{border-bottom:1px solid var(--line);padding-bottom:12px}
+  .addrow{padding-bottom:0}.addrow td{padding:0}
+  .t{grid-template-columns:84px minmax(0,1fr)}
+  .t .pill{grid-column:2;grid-row:1}
+  .t .k{grid-row:1/3}
+  .t .s{grid-column:2;white-space:normal}
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Jira People Board</h1>
+      <p class="sub" id="sub">Tickets assigned to the people you follow, across the projects you pick.</p>
+    </div>
+    <div class="tools">
+      <label class="toggle"><input type="checkbox" id="showDone"> Include done</label>
+      <span class="stamp" id="stamp"></span>
+      <button class="btn" id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <div id="banner" hidden></div>
+  <div class="board">
+    <table>
+      <thead><tr><th class="c-person">Person</th><th>Assigned tickets</th></tr></thead>
+      <tbody id="rows">
+        <tr class="emptyrow"><td colspan="2">Loading your list…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div id="modalRoot"></div>
+
+<script>
+const SERVER = "Atlassian Rovo";
+const MAX = 100;
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const initials = n => (n||"?").replace(/\(.*?\)/g,"").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+const docId = id => String(id).replace(/[^A-Za-z0-9_-]/g, "_");
+
+let mcp = null, cloudId = null;
+let people = [];               // [{accountId, displayName, avatarUrl, projects:[{key,name}], addedAt}]
+const tickets = {};            // accountId -> {state:'loading'|'ok'|'err', issues, more, url, err}
+let showDone = false;
+try { showDone = localStorage.getItem("jpd.showDone") === "1"; } catch {}
+$("#showDone").checked = showDone;
+
+/* ---------- storage: db (per-viewer, private) with localStorage fallback ---------- */
+const store = {
+  mode: "local", col: null,
+  async init() {
+    try {
+      const [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+      const uid = user ? await user.id() : null;
+      if (db && uid) {
+        this.mode = "db";
+        this.col = db.collection("data/users/" + uid);
+        return new Promise(resolve => {
+          let first = true;
+          const t = setTimeout(() => { if (first) { first = false; this.fallback(); resolve(); } }, 10000);
+          this.col.onSnapshot(snap => {
+            people = snap.docs.map(d => d.data()).filter(p => p && p.accountId)
+              .sort((a,b) => (a.addedAt||0) - (b.addedAt||0));
+            if (first) { first = false; clearTimeout(t); resolve(); }
+            else { render(); loadMissing(); }
+          }, () => { if (first) { first = false; clearTimeout(t); this.fallback(); resolve(); } });
+        });
+      }
+    } catch {}
+    this.fallback();
+  },
+  fallback() {
+    this.mode = "local";
+    try { people = JSON.parse(localStorage.getItem("jpd.people") || "[]"); } catch { people = []; }
+  },
+  async save(p) {
+    const i = people.findIndex(x => x.accountId === p.accountId);
+    if (i >= 0) people[i] = p; else people.push(p);
+    if (this.mode === "db") await this.col.doc(docId(p.accountId)).set(p);
+    else try { localStorage.setItem("jpd.people", JSON.stringify(people)); } catch {}
+  },
+  async remove(accountId) {
+    people = people.filter(x => x.accountId !== accountId);
+    if (this.mode === "db") await this.col.doc(docId(accountId)).delete();
+    else try { localStorage.setItem("jpd.people", JSON.stringify(people)); } catch {}
+  }
+};
+
+/* ---------- Jira via the viewer's Atlassian connector ---------- */
+function payloadOf(res) {
+  let p = res && res.payload;
+  if (typeof p === "string") { try { p = JSON.parse(p); } catch {} }
+  return p;
+}
+function errInfo(e) {
+  const code = e && e.code;
+  switch (code) {
+    case "needs_reauth": return {msg:"Your Atlassian connection has expired. Reconnect Atlassian Rovo in claude.ai Settings → Connectors, then refresh.", page:true};
+    case "server_not_connected": return {msg:"This board reads Jira through the Atlassian Rovo connector. Add it in claude.ai Settings → Connectors, then refresh.", page:true};
+    case "selection_required": return {msg:"You have more than one Atlassian Rovo connector. Choose one when claude.ai asks, then refresh.", page:true};
+    case "not_in_manifest": case "approval_required": case "consent_required":
+      return {msg:"The board needs your permission to read Jira through Atlassian Rovo.", page:true, ask:true};
+    case "blocked_by_policy": return {msg:"Your organization's policy blocks this Jira tool for your account.", page:true};
+    case "not_granted": case "capability_disabled": case "capability_removed":
+      return {msg:"Live Jira data isn't available in this view. Open the board on claude.ai to see tickets.", page:true};
+    case "server_unavailable": return {msg:"Jira didn't answer in time. Try again in a moment.", retry:true};
+    case "tool_error": return {msg: shortMsg(e.message) || "Jira rejected the query."};
+    default: return {msg: shortMsg(e && e.message) || "Couldn't reach Jira.", retry: !!(e && e.retryable)};
+  }
+}
+function shortMsg(m){ if(!m) return ""; m=String(m); return m.length>160 ? m.slice(0,160)+"…" : m; }
+
+async function call(tool, input, cache) {
+  const opts = cache === false ? {cache:false} : {cache: cache || {staleTime:60000, gcTime:600000}};
+  try { return payloadOf(await mcp.callTool(SERVER, tool, input, opts)); }
+  catch (e) {
+    if (e && e.retryable) {
+      await new Promise(r => setTimeout(r, Math.min(e.retryAfterMs || 0, 8000) + 600 + Math.random()*800));
+      return payloadOf(await mcp.callTool(SERVER, tool, input, opts));
+    }
+    throw e;
+  }
+}
+async function ensureCloud() {
+  if (cloudId) return cloudId;
+  const list = await call("getAccessibleAtlassianResources", {}, {staleTime:3600000, gcTime:86400000});
+  const arr = Array.isArray(list) ? list : (list && (list.resources || list.data)) || [];
+  const jira = arr.find(r => (r.scopes||[]).some(s => /jira/.test(s))) || arr[0];
+  if (!jira) throw {code:"tool_error", message:"No Jira site is available to your Atlassian account."};
+  cloudId = jira.id;
+  return cloudId;
+}
+function jqlFor(p) {
+  const parts = [`assignee = "${p.accountId.replace(/"/g,'')}"`];
+  if (p.projects && p.projects.length) parts.push(`project in (${p.projects.map(x => `"${x.key.replace(/"/g,'')}"`).join(", ")})`);
+  if (!showDone) parts.push("statusCategory != Done");
+  return parts.join(" AND ") + " ORDER BY updated DESC";
+}
+const CAT_ORDER = {indeterminate:0, new:1, done:2};
+async function loadTickets(p, refresh) {
+  tickets[p.accountId] = {...(tickets[p.accountId]||{}), state:"loading"};
+  renderTickets(p);
+  try {
+    const cid = await ensureCloud();
+    const res = await call("searchJiraIssuesUsingJql", {
+      cloudId: cid, jql: jqlFor(p), maxResults: MAX,
+      fields: ["summary","status","issuetype","priority","project","updated"]
+    }, refresh ? {staleTime:60000, gcTime:600000, refresh:true} : undefined);
+    const box = (res && res.issues) || {};
+    const nodes = box.nodes || (Array.isArray(res && res.issues) ? res.issues : []);
+    const issues = nodes.map(n => {
+      const f = n.fields || {};
+      const cat = (f.status && f.status.statusCategory && f.status.statusCategory.key) || "new";
+      return { key:n.key, summary:f.summary||"", status:(f.status&&f.status.name)||"", cat,
+               type:(f.issuetype&&f.issuetype.name)||"", updated:f.updated||"",
+               url:n.webUrl || `https://${siteHost()}/browse/${n.key}` };
+    }).sort((a,b) => (CAT_ORDER[a.cat]??1) - (CAT_ORDER[b.cat]??1) || (b.updated > a.updated ? 1 : -1));
+    tickets[p.accountId] = { state:"ok", issues, more: !!(box.pageInfo && box.pageInfo.hasNextPage), url: box.webUrl || "" };
+    setStamp();
+  } catch (e) {
+    const info = errInfo(e);
+    tickets[p.accountId] = { ...(tickets[p.accountId]||{}), state:"err", err:info };
+    if (info.page) showBanner(info);
+  }
+  renderTickets(p);
+}
+let site = "";
+function siteHost(){ return site || "atlassian.net"; }
+let stampTime = null;
+function setStamp(){ stampTime = new Date(); $("#stamp").textContent = "Updated " + stampTime.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}); }
+
+async function runPool(list, fn, n=4) {
+  const q = list.slice(); const workers = Array.from({length:Math.min(n,q.length)}, async () => { while (q.length) await fn(q.shift()); });
+  await Promise.all(workers);
+}
+function loadAll(refresh) {
+  if (!mcp) return;
+  hideBanner();
+  runPool(people, p => loadTickets(p, refresh));
+}
+function loadMissing(){ if (mcp) runPool(people.filter(p => !tickets[p.accountId]), p => loadTickets(p)); }
+
+/* ---------- rendering ---------- */
+// Artifact pages can't load images from other sites, so avatars are initials on a per-person hue.
+function hueOf(s){ let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
+function avatarHTML(p, cls="") {
+  return `<span class="avatar ${cls}" style="--h:${hueOf(p.accountId || p.displayName)}" aria-hidden="true">${esc(initials(p.displayName))}</span>`;
+}
+function emailOf(u){
+  if (u.emailAddress) return u.emailAddress;
+  const txt = String(u.html || "").replace(/<[^>]*>/g, "");
+  const m = txt.match(/[^\s<>()]+@[^\s<>()]+/);
+  return m ? m[0] : "";
+}
+function render() {
+  const tb = $("#rows");
+  let html = "";
+  if (!people.length) {
+    html += `<tr class="emptyrow"><td colspan="2">No one on the board yet. Add a person and pick the projects to track their tickets.</td></tr>`;
+  }
+  for (const p of people) {
+    const id = esc(docId(p.accountId));
+    const chips = (p.projects && p.projects.length)
+      ? p.projects.map(x => `<span class="chip" title="${esc(x.name)}">${esc(x.key)}</span>`).join("")
+      : `<span class="chip all">All projects</span>`;
+    html += `<tr data-id="${esc(p.accountId)}">
+      <td><div class="person">${avatarHTML(p)}<div style="min-width:0">
+        <div class="pname">${esc(p.displayName)}</div>
+        ${p.email ? `<div class="pmail">${esc(p.email)}</div>` : ""}
+        <div class="pmeta" id="meta-${id}"></div>
+        <div class="chips">${chips}</div>
+        <div class="pactions">
+          <button class="btn ghost" type="button" data-act="edit">Edit projects</button>
+          <button class="btn ghost danger" type="button" data-act="remove">Remove</button>
+        </div></div></div></td>
+      <td id="tk-${id}"></td></tr>`;
+  }
+  html += `<tr class="addrow"><td colspan="2"><button class="addbtn" type="button" id="addBtn"><span class="plus">+</span> Add person</button></td></tr>`;
+  tb.innerHTML = html;
+  people.forEach(renderTickets);
+  const n = people.length;
+  $("#sub").textContent = n ? `${n} ${n===1?"person":"people"} · ${showDone ? "all" : "open"} tickets, newest activity first.` : "Tickets assigned to the people you follow, across the projects you pick.";
+}
+function renderTickets(p) {
+  const cell = document.getElementById("tk-" + docId(p.accountId));
+  const meta = document.getElementById("meta-" + docId(p.accountId));
+  if (!cell) return;
+  const t = tickets[p.accountId];
+  if (!mcp) { cell.innerHTML = `<div class="empty">Live Jira data loads when the board is opened on claude.ai.</div>`; return; }
+  if (!t || (t.state === "loading" && !t.issues)) { cell.innerHTML = `<div class="skel"></div><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div>`; return; }
+  if (t.state === "err" && !t.issues) {
+    cell.innerHTML = `<div class="cell-err"><span>${esc(t.err.msg)}</span><button class="btn" type="button" data-act="retry">Try again</button></div>`;
+    if (meta) meta.textContent = "";
+    return;
+  }
+  const iss = t.issues || [];
+  if (meta) {
+    const prog = iss.filter(i => i.cat === "indeterminate").length;
+    meta.textContent = `${iss.length}${t.more ? "+" : ""} ${showDone ? "tickets" : "open"}${prog ? ` · ${prog} in progress` : ""}`;
+  }
+  let h = "";
+  if (t.state === "err") h += `<div class="cell-err" style="margin-bottom:6px"><span>Showing earlier results. ${esc(t.err.msg)}</span><button class="btn" type="button" data-act="retry">Try again</button></div>`;
+  if (!iss.length) h += `<div class="empty">No ${showDone ? "" : "open "}tickets assigned in these projects.</div>`;
+  else {
+    h += `<div class="tickets">` + iss.map(i =>
+      `<a class="t" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.type)} · ${esc(i.summary)}">
+        <span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${esc(i.summary)}</span></a>`).join("") + `</div>`;
+  }
+  if (t.more || (iss.length && t.url)) {
+    h += `<div class="tfoot"><span>${t.more ? `Showing the ${MAX} most recently updated.` : ""}</span>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">Open in Jira ↗</a>` : ""}</div>`;
+  }
+  cell.innerHTML = h;
+}
+function showBanner(info) {
+  const b = $("#banner");
+  b.className = "banner err"; b.hidden = false;
+  b.innerHTML = `<span>${esc(info.msg)}</span>` + (info.ask || info.retry ? `<button class="btn" type="button" id="bannerBtn">${info.ask ? "Allow and load" : "Try again"}</button>` : "");
+  const btn = $("#bannerBtn"); if (btn) btn.onclick = () => { cloudId = null; loadAll(true); };
+}
+function hideBanner(){ $("#banner").hidden = true; }
+
+/* ---------- events ---------- */
+$("#rows").addEventListener("click", async e => {
+  const btn = e.target.closest("button"); if (!btn) return;
+  if (btn.id === "addBtn") return openModal();
+  const tr = btn.closest("tr[data-id]"); if (!tr) return;
+  const p = people.find(x => x.accountId === tr.dataset.id); if (!p) return;
+  const act = btn.dataset.act;
+  if (act === "edit") openModal(p);
+  else if (act === "retry") loadTickets(p, true);
+  else if (act === "remove") {
+    if (btn.dataset.confirm) {
+      try { await store.remove(p.accountId); delete tickets[p.accountId]; render(); } catch { btn.textContent = "Couldn't remove"; }
+    } else { btn.dataset.confirm = "1"; btn.textContent = "Click to confirm"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.confirm; btn.textContent = "Remove"; } }, 3500); }
+  }
+});
+$("#refresh").onclick = () => loadAll(true);
+$("#showDone").onchange = e => {
+  showDone = e.target.checked;
+  try { localStorage.setItem("jpd.showDone", showDone ? "1" : "0"); } catch {}
+  render(); loadAll(false);
+};
+setInterval(() => { if (!document.hidden && mcp && people.length) loadAll(true); }, 5*60*1000);
+
+/* ---------- add / edit modal ---------- */
+function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+function openModal(existing) {
+  const st = { step: existing ? 2 : 1, person: existing ? {...existing} : null,
+               projects: existing ? [...(existing.projects||[])] : [], userResults: [], projResults: [], loading:false, err:"" };
+  const root = $("#modalRoot");
+  root.innerHTML = `<div class="scrim" id="scrim"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle">
+    <div class="mhead"><h2 id="mtitle"></h2><div class="steps" id="msteps"></div></div>
+    <div class="mbody" id="mbody"></div>
+    <div class="mfoot" id="mfoot"></div></div></div>`;
+  const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  $("#scrim").addEventListener("mousedown", e => { if (e.target.id === "scrim") close(); });
+
+  const searchUsers = debounce(async q => {
+    if (!q.trim()) { st.userResults = []; st.err=""; paintResults(); return; }
+    st.loading = true; paintResults();
+    try {
+      const cid = await ensureCloud();
+      const r = await call("lookupJiraAccountId", {cloudId:cid, searchString:q.trim(), showAvatar:true});
+      const users = (r && r.data && r.data.users && r.data.users.users) || (r && r.users) || [];
+      st.userResults = users.filter(u => !u.accountType || u.accountType === "atlassian"); st.err = "";
+    } catch (e) { st.err = errInfo(e).msg; st.userResults = []; }
+    st.loading = false; paintResults();
+  }, 300);
+  const searchProjects = debounce(async q => {
+    st.loading = true; paintResults();
+    try {
+      const cid = await ensureCloud();
+      const input = {cloudId:cid, action:"browse", expandIssueTypes:false, maxResults:50};
+      if (q.trim()) input.searchString = q.trim();
+      const r = await call("getVisibleJiraProjects", input, {staleTime:600000, gcTime:3600000});
+      st.projResults = (r && r.values) || []; st.err = "";
+    } catch (e) { st.err = errInfo(e).msg; st.projResults = []; }
+    st.loading = false; paintResults();
+  }, 250);
+
+  function paint() {
+    $("#mtitle").textContent = existing ? `Projects for ${existing.displayName}` : (st.step === 1 ? "Add a person" : "Pick projects");
+    $("#msteps").textContent = existing ? "Leave empty to show tickets from every project." : `Step ${st.step} of 2 · ${st.step === 1 ? "Find someone in Jira" : "Choose which projects to track"}`;
+    const body = $("#mbody"), foot = $("#mfoot");
+    if (!mcp) { body.innerHTML = `<p class="hint">Adding people needs live Jira access, which is available when this board is opened on claude.ai.</p>`; foot.innerHTML = `<button class="btn" type="button" id="mcancel">Close</button>`; $("#mcancel").onclick = close; return; }
+    if (st.step === 1) {
+      body.innerHTML = `<label class="lbl" for="uq">Name or email</label>
+        <input type="search" id="uq" placeholder="Start typing a name…" autocomplete="off">
+        <div class="results" id="res"></div>`;
+      foot.innerHTML = `<button class="btn" type="button" id="mcancel">Cancel</button>`;
+      $("#mcancel").onclick = close;
+      const inp = $("#uq"); inp.focus(); inp.oninput = () => searchUsers(inp.value);
+      paintResults();
+    } else {
+      body.innerHTML = `${existing ? "" : `<div class="selperson">${avatarHTML(st.person,"sm")}<strong>${esc(st.person.displayName)}</strong></div>`}
+        <label class="lbl">Selected projects</label>
+        <div class="picked" id="picked"></div>
+        <label class="lbl" for="pq">Find projects</label>
+        <input type="search" id="pq" placeholder="Project name or key" autocomplete="off">
+        <div class="results" id="res"></div>`;
+      foot.innerHTML = `${existing ? "" : `<button class="btn" type="button" id="mback">Back</button>`}<button class="btn" type="button" id="mcancel">Cancel</button><button class="btn primary" type="button" id="msave">${existing ? "Save" : "Add to board"}</button>`;
+      $("#mcancel").onclick = close;
+      if ($("#mback")) $("#mback").onclick = () => { st.step = 1; st.person = null; paint(); };
+      $("#msave").onclick = async () => {
+        const btn = $("#msave"); btn.disabled = true; btn.textContent = "Saving…";
+        const p = { accountId: st.person.accountId, displayName: st.person.displayName, email: st.person.email || "",
+                    projects: st.projects.map(x => ({key:x.key, name:x.name})), addedAt: st.person.addedAt || Date.now() };
+        try { await store.save(p); close(); delete tickets[p.accountId]; render(); loadTickets(p, true); }
+        catch { btn.disabled = false; btn.textContent = "Couldn't save. Try again"; }
+      };
+      const inp = $("#pq"); inp.oninput = () => searchProjects(inp.value);
+      paintPicked(); searchProjects("");
+    }
+  }
+  function paintPicked() {
+    const el = $("#picked"); if (!el) return;
+    el.innerHTML = st.projects.length
+      ? st.projects.map(x => `<span class="pchip" title="${esc(x.name)}">${esc(x.key)}<button type="button" data-rm="${esc(x.key)}" aria-label="Remove ${esc(x.key)}">×</button></span>`).join("")
+      : `<span class="hint">None yet. With no projects selected, the board shows tickets from every project.</span>`;
+    el.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { st.projects = st.projects.filter(x => x.key !== b.dataset.rm); paintPicked(); paintResults(); });
+  }
+  function paintResults() {
+    const el = $("#res"); if (!el) return;
+    if (st.err) { el.innerHTML = `<div class="cell-err">${esc(st.err)}</div>`; return; }
+    if (st.loading && !(st.step === 1 ? st.userResults : st.projResults).length) { el.innerHTML = `<div class="skel"></div><div class="skel" style="width:70%"></div>`; return; }
+    if (st.step === 1) {
+      const taken = new Set(people.map(p => p.accountId));
+      el.innerHTML = st.userResults.length ? st.userResults.map((u, i) => `
+        <button class="res" type="button" data-i="${i}" ${taken.has(u.accountId) ? "disabled" : ""}>
+          ${avatarHTML(u,"sm")}<span class="rn">${esc(u.displayName)}${emailOf(u) ? `<span class="rmail">${esc(emailOf(u))}</span>` : ""}</span><span class="rk">${taken.has(u.accountId) ? "On board" : ""}</span></button>`).join("")
+        : ($("#uq") && $("#uq").value.trim() && !st.loading ? `<div class="hint">No one in Jira matches that.</div>` : `<div class="hint">Search by name or email address.</div>`);
+      el.querySelectorAll("[data-i]").forEach(b => b.onclick = () => {
+        const u = st.userResults[+b.dataset.i];
+        st.person = { accountId:u.accountId, displayName:u.displayName, email:emailOf(u) };
+        st.step = 2; paint();
+      });
+    } else {
+      const sel = new Set(st.projects.map(x => x.key));
+      el.innerHTML = st.projResults.length ? st.projResults.map((p, i) => `
+        <button class="res ${sel.has(p.key) ? "on" : ""}" type="button" data-i="${i}" aria-pressed="${sel.has(p.key)}">
+          <span class="check">${sel.has(p.key) ? "✓" : ""}</span><span class="rn">${esc(p.name)}</span><span class="rk">${esc(p.key)}</span></button>`).join("")
+        : (!st.loading ? `<div class="hint">No projects match that.</div>` : "");
+      el.querySelectorAll("[data-i]").forEach(b => b.onclick = () => {
+        const p = st.projResults[+b.dataset.i];
+        if (sel.has(p.key)) st.projects = st.projects.filter(x => x.key !== p.key);
+        else st.projects.push({key:p.key, name:p.name});
+        paintPicked(); paintResults();
+      });
+    }
+  }
+  paint();
+}
+
+/* ---------- boot ---------- */
+(async () => {
+  render();
+  const [m] = await Promise.all([claude.use("mcp").catch(() => null), store.init()]);
+  mcp = m;
+  render();
+  if (!mcp) { showBanner({msg:"Live Jira data isn't available in this view. Open the board on claude.ai to load tickets."}); return; }
+  loadAll(false);
+})();
+</script>
