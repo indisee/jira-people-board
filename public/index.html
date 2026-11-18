@@ -219,7 +219,10 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .hrow span{white-space:pre-wrap;overflow-wrap:anywhere}
 .hrow span.none{color:var(--muted)}
 .hmissing{color:var(--muted);font-size:.85rem}
-/* Settings dialog */
+/* Settings: dialog (browser) and the separate Settings window (app) */
+.spage{height:100vh;display:grid;grid-template-rows:minmax(0,1fr) auto;background:var(--surface)}
+.spage .sbody{padding:20px 24px;overflow:auto}
+.spage .sfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 24px;border-top:1px solid var(--line);background:var(--surface-2)}
 .sform{display:grid;gap:12px}
 .ssec{margin:6px 0 -4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 .sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
@@ -1177,14 +1180,16 @@ async function boot() {
   loadAll();
 }
 
-/* ---------- settings ---------- */
-function openSettings() {
+/* ---------- settings ----------
+   In the app: a separate macOS-style Settings window (App menu → Settings… ⌘, or the gear button).
+   In the browser: the same form in a dialog (⌘, works there too). */
+const VIEW = new URLSearchParams(location.search).get("view");
+function settingsForm(body, foot, { onClose, onSaved }) {
   const st = { ...config.settings }, d = config.defaults || {}, eff = config.effective || {};
   const field = (k, label, hint, ph, type = "text", extra = "") => `<label class="sfield"><span class="slabel">${label}</span>
     <input name="${k}" type="${type}" ${extra} value="${esc(st[k] ?? "")}" placeholder="${esc(ph)}" spellcheck="false" autocomplete="off">
     ${hint ? `<span class="shint">${hint}</span>` : ""}</label>`;
-  const sh = openSheet({ title: "Settings", wide: true });
-  sh.body.innerHTML = `<form id="setForm" class="sform">
+  body.innerHTML = `<form id="setForm" class="sform">
     <h3 class="ssec">Jira connection</h3>
     ${field("envFile", "Credentials file", "Holds ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (and the Zoom webhook). Empty = default.", d.envFile || "~/.release-script.env")}
     ${field("site", "Jira site", "", d.site || "https://your-site.atlassian.net", "url")}
@@ -1204,9 +1209,11 @@ function openSettings() {
     <h3 class="ssec">Zoom</h3>
     <p class="shint" style="margin:0">${config.zoom ? "✓ Webhook found in the credentials file (ZOOM_WEBHOOK_URL, ZOOM_WEBHOOK_TOKEN)." : "Add ZOOM_WEBHOOK_URL and ZOOM_WEBHOOK_TOKEN to the credentials file to send Daily notes to a Zoom channel."}</p>
   </form>`;
-  sh.foot.innerHTML = `<span class="stamp" id="setMsg" style="margin-right:auto;align-self:center" aria-live="polite"></span>
-    <button class="btn" type="button" id="shClose">Cancel</button><button class="btn primary" type="button" id="setSave">Save</button>`;
-  $("#shClose").onclick = sh.close;
+  foot.innerHTML = `<span class="stamp" id="setMsg" style="margin-right:auto;align-self:center" aria-live="polite"></span>
+    <button class="btn" type="button" id="setCancel">Cancel</button><button class="btn primary" type="button" id="setSave">Save</button>`;
+  $("#setCancel").onclick = onClose;
+  $("#setForm").addEventListener("submit", e => { e.preventDefault(); $("#setSave").click(); });
+  $("#setForm").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); $("#setSave").click(); } });
   const collect = () => {
     const out = {};
     for (const el of $("#setForm").elements) {
@@ -1228,19 +1235,46 @@ function openSettings() {
   $("#setSave").onclick = async () => {
     const m = $("#setMsg"); m.textContent = "Saving…";
     try {
-      const before = JSON.stringify(config.effective);
-      config = await api("/api/config", { method: "PUT", body: JSON.stringify(collect()) });
-      scheduleAuto(); feed.expire();
-      if (config.error) { m.innerHTML = `<span class="sbad">${esc(config.error)}</span>`; showBanner({ msg: config.error + ". Fix it in Settings.", settings: true }); return; }
-      hideBanner(); sh.close();
-      // New site or fields: reload everything; board-only changes just repaint.
-      if (JSON.stringify(config.effective) !== before) { for (const k in tickets) delete tickets[k]; render(); loadAll(); }
-      else render();
+      const next = await api("/api/config", { method: "PUT", body: JSON.stringify(collect()) });
+      if (next.error) { config = next; m.innerHTML = `<span class="sbad">${esc(next.error)}</span>`; onSaved(next, false); return; }
+      onSaved(next, true);
     } catch (e) { m.innerHTML = `<span class="sbad">Not saved: ${esc(e.msg || String(e))}</span>`; }
   };
+  const first = $("#setForm input"); if (first) first.focus();
+}
+// Main window: take new settings (from the dialog, or from the Settings window via an app event).
+function applyConfig(next) {
+  const before = JSON.stringify(config.effective);
+  config = next; scheduleAuto(); feed.expire();
+  if (config.error) { showBanner({ msg: config.error + ". Fix it in Settings.", settings: true }); return; }
+  hideBanner();
+  // New site or fields: reload everything; board-only changes just repaint.
+  if (JSON.stringify(config.effective) !== before) { for (const k in tickets) delete tickets[k]; render(); loadAll(); }
+  else render();
+}
+function openSettings() {
+  if (TAURI) { TAURI.invoke("open_settings"); return; }
+  if ($("#setForm")) return;
+  const sh = openSheet({ title: "Settings", wide: true });
+  settingsForm(sh.body, sh.foot, { onClose: sh.close, onSaved: (next, ok) => { applyConfig(next); if (ok) sh.close(); } });
+}
+async function settingsWindow() {
+  document.title = "Settings";
+  document.querySelector(".wrap").hidden = true;
+  const page = document.createElement("div");
+  page.className = "spage";
+  page.innerHTML = `<div class="sbody"></div><div class="sfoot"></div>`;
+  document.body.appendChild(page);
+  try { config = await api("/api/config"); } catch {}
+  const close = () => window.__TAURI__.window.getCurrentWindow().close();
+  settingsForm(page.querySelector(".sbody"), page.querySelector(".sfoot"), { onClose: close, onSaved: (next, ok) => { if (ok) close(); } });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
 }
 $("#settingsBtn").onclick = () => openSettings();
-boot();
+// ⌘, in the browser version (the app gets it from the menu bar).
+if (!TAURI) document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === ",") { e.preventDefault(); openSettings(); } });
+if (TAURI && VIEW !== "settings" && window.__TAURI__.event) window.__TAURI__.event.listen("config-changed", e => applyConfig(e.payload));
+if (VIEW === "settings") settingsWindow(); else boot();
 </script>
 </body>
 </html>

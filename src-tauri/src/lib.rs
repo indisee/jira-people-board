@@ -8,7 +8,11 @@ use base64::Engine;
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use serde_json::{json, Value};
 use std::{collections::HashMap, fs, path::PathBuf, sync::{Arc, Mutex, RwLock}};
-use tauri::{http::Response, Manager, State};
+use tauri::{
+    http::Response,
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder,
+};
 
 const DEFAULT_SITE: &str = "https://your-site.atlassian.net";
 const DEFAULT_SP_FIELD: &str = "customfield_10XXX"; // story points
@@ -262,7 +266,10 @@ fn config_save(app: tauri::AppHandle, state: State<'_, AppState>, settings: Valu
     write_json(&data_file(&app, "settings.json")?, &settings)?;
     *state.jira.write().unwrap() = load_jira(&state.home, &settings).map(Arc::new);
     state.avatars.lock().unwrap().clear();
-    Ok(config_view(&app, &state))
+    let view = config_view(&app, &state);
+    // Tell the board window to pick up the new settings.
+    let _ = app.emit("config-changed", &view);
+    Ok(view)
 }
 
 /// Check the connection: who the token belongs to, and the names of the configured custom fields.
@@ -275,6 +282,88 @@ async fn config_check(state: State<'_, AppState>) -> Result<Value, String> {
         fields.as_array().and_then(|a| a.iter().find(|f| f["id"] == id)).and_then(|f| f["name"].as_str()).map(String::from)
     };
     Ok(json!({ "user": me["displayName"], "email": me["emailAddress"], "spName": name_of(&j.sp_field), "teamName": name_of(&j.team_field) }))
+}
+
+/// Open (or bring forward) the Settings window: App menu → Settings… (⌘,) or the gear button.
+fn show_settings(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let mut b = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html?view=settings".into()))
+        .title("Settings")
+        .inner_size(600.0, 720.0)
+        .resizable(false)
+        .minimizable(false)
+        .maximizable(false)
+        .disable_drag_drop_handler();
+    if let Some(main) = app.get_webview_window("main") {
+        if let (Ok(pos), Ok(size), Ok(scale)) = (main.outer_position(), main.outer_size(), main.scale_factor()) {
+            let (x, y) = (pos.x as f64 / scale, pos.y as f64 / scale);
+            let w = size.width as f64 / scale;
+            b = b.position(x + (w - 600.0) / 2.0, y + 80.0);
+        }
+    }
+    let _ = b.build();
+}
+
+#[tauri::command]
+fn open_settings(app: tauri::AppHandle) {
+    show_settings(&app);
+}
+
+/// macOS menu bar: app menu with Settings… ⌘, plus the standard Edit and Window menus
+/// (Edit keeps ⌘C / ⌘V / ⌘Z working in text fields once a custom menu is set).
+fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let app_menu = Submenu::with_items(
+        app,
+        "Jira People Board",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    Menu::with_items(app, &[&app_menu, &edit, &window])
 }
 
 /// Post the daily report to the Zoom channel: rich ("full") format first, plain text if Zoom rejects it.
@@ -535,6 +624,13 @@ pub fn run() {
             let settings = settings_read(app.handle());
             let jira = load_jira(&home, &settings).map(Arc::new);
             app.manage(AppState { jira: RwLock::new(jira), avatars: Mutex::new(HashMap::new()), home });
+            let menu = build_menu(app.handle())?;
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, e| {
+                if e.id() == "settings" {
+                    show_settings(app);
+                }
+            });
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("avatar", |ctx, request, responder| {
@@ -563,6 +659,7 @@ pub fn run() {
             config_get,
             config_save,
             config_check,
+            open_settings,
             users_search,
             projects_search,
             teams_search,
