@@ -24,6 +24,7 @@ function readEnv(file) {
 }
 const env = readEnv(ENV_FILE);
 const EMAIL = env.ATLASSIAN_EMAIL, TOKEN = env.ATLASSIAN_API_TOKEN;
+const ZOOM_URL = env.ZOOM_WEBHOOK_URL || "", ZOOM_TOKEN = env.ZOOM_WEBHOOK_TOKEN || ""; // daily report channel
 if (!EMAIL || !TOKEN) { console.error(`ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN missing in ${ENV_FILE}`); process.exit(1); }
 const AUTH = "Basic " + Buffer.from(`${EMAIL}:${TOKEN}`).toString("base64");
 
@@ -112,6 +113,18 @@ const server = http.createServer(async (req, res) => {
         const tmp = NOTES_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(all, null, 2)); fs.renameSync(tmp, NOTES_FILE);
         return send(res, 200, { ok: true });
       }
+    }
+    if (req.method === "POST" && url.pathname === "/api/zoom") {
+      // Rich ("full") format first; plain text if Zoom rejects it.
+      if (!ZOOM_URL || !ZOOM_TOKEN) return send(res, 400, { message: `ZOOM_WEBHOOK_URL / ZOOM_WEBHOOK_TOKEN are missing in ${ENV_FILE}` });
+      if (!ZOOM_URL.startsWith("https://integrations.zoom.us/")) return send(res, 400, { message: "ZOOM_WEBHOOK_URL must be an https://integrations.zoom.us/ webhook" });
+      const { full, text } = await readBody(req);
+      const post = (format, body) => fetch(`${ZOOM_URL}?format=${format}`, { method: "POST", headers: { Authorization: ZOOM_TOKEN, "Content-Type": "application/json" }, body });
+      let r = await post("full", JSON.stringify(full));
+      if (r.ok) return send(res, 200, { format: "full" });
+      r = await post("message", String(text || ""));
+      if (r.ok) return send(res, 200, { format: "message" });
+      return send(res, 502, { message: `Zoom returned ${r.status}: ${(await r.text()).slice(0, 200)}` });
     }
     if (req.method === "GET" && url.pathname === "/api/users") {
       const q = url.searchParams.get("q") || "";

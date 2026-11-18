@@ -19,6 +19,8 @@ struct Jira {
     auth: String,
     sp_field: String,
     team_clause: String,
+    /// Zoom incoming webhook (ZOOM_WEBHOOK_URL, ZOOM_WEBHOOK_TOKEN) for the daily report, if set.
+    zoom: Option<(String, String)>,
 }
 
 struct AppState {
@@ -69,6 +71,10 @@ fn load_jira(home: PathBuf) -> Result<Jira, String> {
         auth,
         sp_field: pick("JIRA_SP_FIELD", DEFAULT_SP_FIELD),
         team_clause: pick("JIRA_TEAM_CLAUSE", DEFAULT_TEAM_CLAUSE),
+        zoom: match (env.get("ZOOM_WEBHOOK_URL"), env.get("ZOOM_WEBHOOK_TOKEN")) {
+            (Some(u), Some(t)) if !u.is_empty() && !t.is_empty() => Some((u.clone(), t.clone())),
+            _ => None,
+        },
     })
 }
 
@@ -177,6 +183,38 @@ fn notes_put(app: tauri::AppHandle, day: String, id: String, done: String, doing
         map.remove(&day);
     }
     write_json(&path, &all)
+}
+
+/// Post the daily report to the Zoom channel: rich ("full") format first, plain text if Zoom rejects it.
+/// Returns the format that was accepted.
+#[tauri::command]
+async fn zoom_send(state: State<'_, AppState>, full: Value, text: String) -> Result<String, String> {
+    let j = jira(&state)?;
+    let (url, token) = j.zoom.as_ref().ok_or(
+        "CONFIG:ZOOM_WEBHOOK_URL / ZOOM_WEBHOOK_TOKEN are missing in ~/.release-script.env",
+    )?;
+    if !url.starts_with("https://integrations.zoom.us/") {
+        return Err("CONFIG:ZOOM_WEBHOOK_URL must be an https://integrations.zoom.us/ webhook".into());
+    }
+    let post = |format: &str, body: String| {
+        j.client
+            .post(format!("{url}?format={format}"))
+            .header("Authorization", token)
+            .header("Content-Type", "application/json")
+            .body(body)
+            .send()
+    };
+    let r = post("full", full.to_string()).await.map_err(|e| e.to_string())?;
+    if r.status().is_success() {
+        return Ok("full".into());
+    }
+    let r = post("message", text).await.map_err(|e| e.to_string())?;
+    if r.status().is_success() {
+        return Ok("message".into());
+    }
+    let status = r.status();
+    let body = r.text().await.unwrap_or_default();
+    Err(format!("Zoom returned {status}: {}", body.chars().take(200).collect::<String>()))
 }
 
 #[tauri::command]
@@ -427,6 +465,7 @@ pub fn run() {
             people_save,
             notes_load,
             notes_put,
+            zoom_send,
             users_search,
             projects_search,
             teams_search,
