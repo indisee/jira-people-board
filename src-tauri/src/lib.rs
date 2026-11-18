@@ -309,6 +309,39 @@ fn show_settings(app: &tauri::AppHandle) {
     let _ = b.build();
 }
 
+const CREDENTIALS_TEMPLATE: &str = "# Jira People Board — credentials
+# Keep this file private. Values go right after the = sign, no quotes needed.
+
+# Jira account email and API token
+# Create a token at https://id.atlassian.com/manage-profile/security/api-tokens
+ATLASSIAN_EMAIL=
+ATLASSIAN_API_TOKEN=
+
+# Optional: Zoom incoming webhook for sending Daily notes to a channel
+# (in Zoom: Team Chat → Apps → Incoming Webhook → /inc connect <name>)
+ZOOM_WEBHOOK_URL=
+ZOOM_WEBHOOK_TOKEN=
+";
+
+/// Write an empty credentials template at `path` (never over a file that has content),
+/// readable only by the user, then open it in the default text editor.
+#[tauri::command]
+fn credentials_template(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false) {
+        return Err(format!("{path} already has content — not overwriting it"));
+    }
+    fs::write(&p, CREDENTIALS_TEMPLATE).map_err(|e| format!("Couldn't write {path}: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").arg("-t").arg(&p).spawn().map_err(|e| format!("Created, but couldn't open it: {e}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn open_settings(app: tauri::AppHandle) {
     show_settings(&app);
@@ -661,6 +694,7 @@ pub fn run() {
             config_save,
             config_check,
             open_settings,
+            credentials_template,
             users_search,
             projects_search,
             teams_search,
@@ -668,4 +702,21 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Jira People Board");
+}
+
+#[cfg(test)]
+mod template_tests {
+    #[test]
+    fn writes_and_refuses_overwrite() {
+        let p = std::env::temp_dir().join("jpb-template-test.env");
+        let _ = std::fs::remove_file(&p);
+        std::fs::write(&p, "").unwrap(); // empty file is fine to fill
+        // Skip the `open -t` side effect: write the same way the command does.
+        assert!(std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false) == false);
+        std::fs::write(&p, super::CREDENTIALS_TEMPLATE).unwrap();
+        assert!(super::credentials_template(p.display().to_string()).unwrap_err().contains("not overwriting"));
+        let t = std::fs::read_to_string(&p).unwrap();
+        for k in ["ATLASSIAN_EMAIL=", "ATLASSIAN_API_TOKEN=", "ZOOM_WEBHOOK_URL=", "ZOOM_WEBHOOK_TOKEN="] { assert!(t.contains(k)); }
+        let _ = std::fs::remove_file(&p);
+    }
 }

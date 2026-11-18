@@ -1185,7 +1185,7 @@ function settingsForm(body, foot, { onClose, onSaved }) {
     ${hint ? `<span class="shint">${hint}</span>` : ""}</label>`;
   body.innerHTML = `<form id="setForm" class="sform">
     <h3 class="ssec">Jira connection</h3>
-    ${field("envFile", "Credentials file", `Holds ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (and the Zoom webhook).${TAURI ? " In the file dialog, ⇧⌘. shows hidden files." : ""}`, d.envFile || "~/.release-script.env", "text", "", TAURI ? `<button class="btn" type="button" id="pickEnv">Choose…</button>` : "")}
+    ${field("envFile", "Credentials file", `Holds ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (and the Zoom webhook).${TAURI ? " In the file dialog, ⇧⌘. shows hidden files." : ""}`, d.envFile || "~/.release-script.env", "text", "", TAURI ? `<button class="btn" type="button" id="pickEnv">Choose…</button><button class="btn" type="button" id="newEnv" title="Create an empty credentials file with all the fields, then open it for editing">New template…</button>` : "")}
     ${field("site", "Jira site", "", d.site || "https://your-site.atlassian.net", "url")}
     <h3 class="ssec">Custom fields</h3>
     <div class="sgrid">
@@ -1214,6 +1214,16 @@ function settingsForm(body, foot, { onClose, onSaved }) {
       const picked = await TAURI.invoke("plugin:dialog|open", { options: { title: "Choose the credentials file", multiple: false, directory: false, defaultPath: inp.value.trim() || d.envFile || undefined } });
       if (typeof picked === "string" && picked) { inp.value = picked; inp.focus(); }
     } catch (e) { $("#setMsg").innerHTML = `<span class="sbad">${esc(String(e))}</span>`; }
+  };
+  if ($("#newEnv")) $("#newEnv").onclick = async () => {
+    const inp = $('#setForm [name="envFile"]'), msg = $("#setMsg");
+    try {
+      const path = await TAURI.invoke("plugin:dialog|save", { options: { title: "Save the credentials template", defaultPath: "jira-people-board.env" } });
+      if (typeof path !== "string" || !path) return;
+      await TAURI.invoke("credentials_template", { path });
+      inp.value = path;
+      msg.innerHTML = `Created and opened for editing. Fill it in, then Save here.`;
+    } catch (e) { msg.innerHTML = `<span class="sbad">${esc(String(e))}</span>`; }
   };
   // Save only what differs from the defaults, so a later default change still applies to untouched fields.
   const collect = () => {
