@@ -619,6 +619,7 @@ async fn fetch_avatar(state: &AppState, src: &str) -> Result<(String, Vec<u8>), 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let home = app.path().home_dir().unwrap_or_default();
             let settings = settings_read(app.handle());

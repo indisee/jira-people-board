@@ -229,6 +229,8 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 @media (max-width:560px){.sgrid{grid-template-columns:1fr}}
 .sfield{display:grid;gap:4px}
 .slabel{font-size:.85rem;font-weight:500}
+.srow{display:flex;gap:8px;align-items:center}
+.srow input{flex:1}
 .sfield input{font:inherit;font-size:.9rem;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);min-width:0}
 .sfield input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
 .sfield input::placeholder{color:var(--muted);opacity:.75}
@@ -1186,12 +1188,15 @@ async function boot() {
 const VIEW = new URLSearchParams(location.search).get("view");
 function settingsForm(body, foot, { onClose, onSaved }) {
   const st = { ...config.settings }, d = config.defaults || {}, eff = config.effective || {};
-  const field = (k, label, hint, ph, type = "text", extra = "") => `<label class="sfield"><span class="slabel">${label}</span>
-    <input name="${k}" type="${type}" ${extra} value="${esc(st[k] ?? "")}" placeholder="${esc(ph)}" spellcheck="false" autocomplete="off">
+  // Fields show the values in use (saved, else default); the default stays as the placeholder if a field is cleared.
+  const cur = k => k in BOARD_DEFAULTS ? opt(k) : (eff[k] ?? st[k] ?? d[k] ?? "");
+  const input = (k, ph, type, extra) => `<input name="${k}" type="${type}" ${extra} value="${esc(cur(k))}" placeholder="${esc(ph)}" spellcheck="false" autocomplete="off">`;
+  const field = (k, label, hint, ph, type = "text", extra = "", side = "") => `<label class="sfield"><span class="slabel">${label}</span>
+    ${side ? `<span class="srow">${input(k, ph, type, extra)}${side}</span>` : input(k, ph, type, extra)}
     ${hint ? `<span class="shint">${hint}</span>` : ""}</label>`;
   body.innerHTML = `<form id="setForm" class="sform">
     <h3 class="ssec">Jira connection</h3>
-    ${field("envFile", "Credentials file", "Holds ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (and the Zoom webhook). Empty = default.", d.envFile || "~/.release-script.env")}
+    ${field("envFile", "Credentials file", `Holds ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (and the Zoom webhook).${TAURI ? " In the file dialog, ⇧⌘. shows hidden files." : ""}`, d.envFile || "~/.release-script.env", "text", "", TAURI ? `<button class="btn" type="button" id="pickEnv">Choose…</button>` : "")}
     ${field("site", "Jira site", "", d.site || "https://your-site.atlassian.net", "url")}
     <h3 class="ssec">Custom fields</h3>
     <div class="sgrid">
@@ -1214,13 +1219,24 @@ function settingsForm(body, foot, { onClose, onSaved }) {
   $("#setCancel").onclick = onClose;
   $("#setForm").addEventListener("submit", e => { e.preventDefault(); $("#setSave").click(); });
   $("#setForm").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("input")) { e.preventDefault(); $("#setSave").click(); } });
+  if ($("#pickEnv")) $("#pickEnv").onclick = async () => {
+    const inp = $('#setForm [name="envFile"]');
+    try {
+      const picked = await TAURI.invoke("plugin:dialog|open", { options: { title: "Choose the credentials file", multiple: false, directory: false, defaultPath: inp.value.trim() || d.envFile || undefined } });
+      if (typeof picked === "string" && picked) { inp.value = picked; inp.focus(); }
+    } catch (e) { $("#setMsg").innerHTML = `<span class="sbad">${esc(String(e))}</span>`; }
+  };
+  // Save only what differs from the defaults, so a later default change still applies to untouched fields.
   const collect = () => {
     const out = {};
     for (const el of $("#setForm").elements) {
       if (!el.name) continue;
       const v = el.value.trim();
       if (v === "") continue;                       // empty = default
-      out[el.name] = el.type === "number" ? Number(v) : v;
+      const val = el.type === "number" ? Number(v) : v;
+      const def = el.name in BOARD_DEFAULTS ? BOARD_DEFAULTS[el.name] : d[el.name];
+      if (def !== undefined && String(def) === String(val)) continue;
+      out[el.name] = val;
     }
     return out;
   };
@@ -1270,7 +1286,8 @@ async function settingsWindow() {
   settingsForm(page.querySelector(".sbody"), page.querySelector(".sfoot"), { onClose: close, onSaved: (next, ok) => { if (ok) close(); } });
   document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
 }
-$("#settingsBtn").onclick = () => openSettings();
+// The app has Settings… ⌘, in the menu bar; the gear is only for the browser version.
+if (TAURI) $("#settingsBtn").remove(); else $("#settingsBtn").onclick = () => openSettings();
 // ⌘, in the browser version (the app gets it from the menu bar).
 if (!TAURI) document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === ",") { e.preventDefault(); openSettings(); } });
 if (TAURI && VIEW !== "settings" && window.__TAURI__.event) window.__TAURI__.event.listen("config-changed", e => applyConfig(e.payload));
