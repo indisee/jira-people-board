@@ -191,8 +191,8 @@ tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:c
 .daily textarea{font:inherit;font-size:.85rem;text-transform:none;letter-spacing:normal;font-weight:400;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;resize:none;min-height:38px;overflow:hidden;box-sizing:border-box;width:100%}
 .daily textarea:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
 .daily textarea::placeholder{color:var(--muted);opacity:.7}
-.dactions{display:flex;align-items:center;gap:6px}
-.dactions .dsaved{margin-left:auto;font-size:.75rem;color:var(--muted)}
+.dactions{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.dactions .dsaved{order:-1;margin-right:auto;font-size:.75rem;color:var(--muted)}
 tr.collapsed .daily{display:none}
 tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .modal.wide{width:min(720px,100%)}
