@@ -691,7 +691,8 @@ function zoomPayload(day) {
   const d = notes[day] || {}, ppl = people.filter(p => !isTeam(p) && d[p.accountId]);
   // Compact: a coloured stripe per person, bold name, then one block with ✅ / 🔜 lines (≈3 lines a person).
   // Zoom trims ordinary leading spaces, so wrapped note lines continue after an em-space indent.
-  const lines = (mark, t) => t.trim().split(/\r?\n/).map((l, i) => (i ? "\u2003 " : mark + " ") + l.trim()).join("\n");
+  const IND = "\u2003\u2003";                       // left indent for everything under the name
+  const lines = (mark, t) => t.trim().split(/\r?\n/).map((l, i) => IND + (i ? "\u2003 " : mark + " ") + l.trim()).join("\n");
   const block = n => [n.done.trim() && lines("✅", n.done), n.doing.trim() && lines("🔜", n.doing)].filter(Boolean).join("\n");
   const body = ppl.map(p => ({ type: "section", sidebar_color: hslHex(hueOf(p.accountId || p.displayName), 55, 40), sections: [
     { type: "message", text: p.displayName, style: { bold: true } },
