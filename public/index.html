@@ -186,7 +186,7 @@ tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:c
   .t .s{grid-column:3;white-space:normal}
 }
 /* Daily notes: Done / Doing per person, Next, History, team day view */
-.daily{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.daily{display:grid;gap:6px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
 .daily label{display:grid;gap:3px;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
 .daily textarea{font:inherit;font-size:.85rem;text-transform:none;letter-spacing:normal;font-weight:400;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;resize:none;min-height:38px;overflow:hidden;box-sizing:border-box;width:100%}
 .daily textarea:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
@@ -543,8 +543,8 @@ function dailyHTML(p) {
   const n = noteOf(p.accountId) || {};
   const next = nextPerson(p);
   return `<div class="daily">
-    <label>Done<textarea data-note="done" rows="1" placeholder="What got done since last time">${esc(n.done || "")}</textarea></label>
-    <label>Doing<textarea data-note="doing" rows="1" placeholder="What's next today">${esc(n.doing || "")}</textarea></label>
+    <textarea data-note="done" rows="1" aria-label="Done" placeholder="Done — what got finished">${esc(n.done || "")}</textarea>
+    <textarea data-note="doing" rows="1" aria-label="Doing" placeholder="Doing — what's next today">${esc(n.doing || "")}</textarea>
     <div class="dactions">
       <button class="btn icon" type="button" data-act="next" aria-label="${next ? "Next person" : "Finish"}" title="${next ? `Next: collapse and go to ${esc(next.displayName)}` : "Finish: collapse — this is the last person"} (⌘/Ctrl + Enter)">${next ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`}</button>
       <button class="btn icon" type="button" data-act="history" aria-label="History" title="History: this person's notes by date"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg></button>
