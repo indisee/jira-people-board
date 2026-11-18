@@ -211,9 +211,12 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .newtag{display:inline-block;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-fg);background:var(--accent);border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px}
 .pmeta .nnew{color:var(--accent);font-weight:600}
 .bellwrap{position:relative}
-.bell{display:inline-flex;align-items:center;gap:6px;position:relative}
-.bell svg{width:16px;height:16px}
-.bell .badge{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--accent-fg);font-size:.7rem;font-weight:700;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
+.btn.icon{display:inline-grid;place-items:center;width:34px;height:32px;padding:0;position:relative}
+.btn.icon svg{width:17px;height:17px}
+#refresh.spinning svg{animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){#refresh.spinning svg{animation:none}}
+.bell .badge{position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--accent-fg);font-size:.7rem;font-weight:700;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
 .npanel{position:absolute;right:0;top:calc(100% + 6px);z-index:15;width:min(420px,calc(100vw - 32px));max-height:min(70vh,560px);display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 40px rgb(0 0 0 / .2)}
 .nhead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .nhead h2{margin:0;font-family:var(--f-display);font-size:1rem}
@@ -249,14 +252,14 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       <label class="toggle" for="donePeriod">Done tickets <select id="donePeriod"><option value="0">Hide</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select></label>
       <span class="stamp" id="stamp"></span>
       <span class="seg" role="group" aria-label="Fold people">
-        <button class="btn" id="foldAll" type="button" title="Collapse every person">▸ Collapse all</button><button class="btn" id="unfoldAll" type="button" title="Expand every person">▾ Expand all</button>
+        <button class="btn icon" id="foldAll" type="button" title="Collapse all" aria-label="Collapse all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg></button><button class="btn icon" id="unfoldAll" type="button" title="Expand all" aria-label="Expand all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></button>
       </span>
       <span class="bellwrap">
-        <button class="btn bell" id="bell" type="button" aria-haspopup="true" aria-expanded="false" title="What changed on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span>Changes</span><span class="badge" id="bellBadge" hidden></span></button>
+        <button class="btn icon bell" id="bell" type="button" aria-label="Changes" aria-haspopup="true" aria-expanded="false" title="What changed on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="badge" id="bellBadge" hidden></span></button>
         <div class="npanel" id="npanel" hidden></div>
       </span>
-      <button class="btn" id="dailyBtn" type="button" title="Everyone's Done / Doing notes for a day, ready to copy">Daily notes</button>
-      <button class="btn" id="refresh" type="button">Refresh</button>
+      <button class="btn icon" id="dailyBtn" type="button" title="Daily notes — everyone's Done / Doing for a day, ready to copy" aria-label="Daily notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/><path d="M8 14h8"/><path d="M8 18h5"/></svg></button>
+      <button class="btn icon" id="refresh" type="button" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/></svg></button>
     </div>
   </header>
   <div id="banner" hidden></div>
@@ -388,7 +391,11 @@ function setStamp(){ $("#stamp").textContent = "Updated " + new Date().toLocaleT
 async function runPool(list, fn, n=4) {
   const q = list.slice(); await Promise.all(Array.from({length:Math.min(n,q.length)}, async () => { while (q.length) await fn(q.shift()); }));
 }
-function loadAll() { hideBanner(); runPool(people, loadTickets); }
+function loadAll() {
+  hideBanner();
+  const b = $("#refresh"); b.classList.add("spinning");
+  return runPool(people, loadTickets).finally(() => b.classList.remove("spinning"));
+}
 
 /* ---------- change feed ----------
    After each successful load a row's tickets are compared with the previous load (kept in localStorage,
