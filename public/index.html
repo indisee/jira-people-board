@@ -219,6 +219,19 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .hrow span{white-space:pre-wrap;overflow-wrap:anywhere}
 .hrow span.none{color:var(--muted)}
 .hmissing{color:var(--muted);font-size:.85rem}
+/* Settings dialog */
+.sform{display:grid;gap:12px}
+.ssec{margin:6px 0 -4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:560px){.sgrid{grid-template-columns:1fr}}
+.sfield{display:grid;gap:4px}
+.slabel{font-size:.85rem;font-weight:500}
+.sfield input{font:inherit;font-size:.9rem;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);min-width:0}
+.sfield input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
+.sfield input::placeholder{color:var(--muted);opacity:.75}
+.shint{font-size:.78rem;color:var(--muted)}
+.sbad{color:var(--danger)}
+.scheck{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 /* Change feed: highlighted new tickets, bell + log panel */
 .t.fresh{box-shadow:inset 3px 0 0 var(--accent)}
 .newtag{display:inline-block;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-fg);background:var(--accent);border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px}
@@ -273,6 +286,7 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       </span>
       <button class="btn icon" id="dailyBtn" type="button" title="Daily notes — everyone's Done / Doing for a day, ready to copy" aria-label="Daily notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/><path d="M8 14h8"/><path d="M8 18h5"/></svg></button>
       <button class="btn icon" id="refresh" type="button" title="Refresh (also runs every minute)" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <button class="btn icon" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
     </div>
   </header>
   <div id="banner" hidden></div>
@@ -288,7 +302,10 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 <div id="modalRoot"></div>
 
 <script>
-const MAX = 100;
+// App settings (Settings dialog). Connection values live in the backend; board values are read here.
+let config = { settings: {}, effective: { teamClause: "cf[10YYY]" }, defaults: {}, error: null, zoom: false };
+const BOARD_DEFAULTS = { refreshMinutes: 1, maxResults: 100, ownedWarnDays: 30, freshDays: 7 };
+const opt = k => { const v = Number(config.settings[k]); return Number.isFinite(v) && config.settings[k] !== "" && config.settings[k] != null ? v : BOARD_DEFAULTS[k]; };
 const $ = (s, r=document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const initials = n => (n||"?").replace(/\(.*?\)/g,"").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
@@ -317,6 +334,8 @@ function tauriCall(path, opts) {
   switch (u.pathname) {
     case "/api/people": return opts.method === "PUT" ? TAURI.invoke("people_save", { list: body }) : TAURI.invoke("people_load");
     case "/api/notes": return opts.method === "PUT" ? TAURI.invoke("notes_put", { day: body.day, id: body.id, done: body.done || "", doing: body.doing || "" }) : TAURI.invoke("notes_load");
+    case "/api/config": return opts.method === "PUT" ? TAURI.invoke("config_save", { settings: body }) : TAURI.invoke("config_get");
+    case "/api/config/check": return TAURI.invoke("config_check");
     case "/api/users": return TAURI.invoke("users_search", { q });
     case "/api/teams": return TAURI.invoke("teams_search", { q });
     case "/api/projects": return TAURI.invoke("projects_search", { q });
@@ -329,8 +348,8 @@ async function api(path, opts = {}) {
     try { return await tauriCall(path, opts); }
     catch (e) {
       const m = String(e && e.message || e);
-      if (m.startsWith("AUTH:")) throw { msg: "Jira rejected the API token. Check ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN in ~/.release-script.env, then restart the app.", page: true };
-      if (m.startsWith("CONFIG:")) throw { msg: m.slice(7) + ". Fix it and restart the app.", page: true };
+      if (m.startsWith("AUTH:")) throw { msg: "Jira rejected the API token. Check ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN in the credentials file (Settings).", page: true, settings: true };
+      if (m.startsWith("CONFIG:")) throw { msg: m.slice(7) + ". Fix it in Settings.", page: true, settings: true };
       throw { msg: m };
     }
   }
@@ -340,7 +359,7 @@ async function api(path, opts = {}) {
   } catch { throw { msg: "The local server isn't running. Start it with: node server.js", page: true }; }
   const body = await r.json().catch(() => ({}));
   if (!r.ok) {
-    if (r.status === 401 || r.status === 403) throw { msg: "Jira rejected the API token. Check ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN in ~/.release-script.env, then restart the server.", page: true };
+    if (r.status === 401 || r.status === 403) throw { msg: "Jira rejected the API token. Check ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN in the credentials file (Settings).", page: true, settings: true };
     throw { msg: body.message || `Request failed (${r.status})` };
   }
   return body;
@@ -356,7 +375,7 @@ const store = {
 const isTeam = p => p.kind === "team";
 function jqlFor(p) {
   const parts = isTeam(p)
-    ? [`cf[10YYY] = "${String(p.teamId).replace(/"/g,'')}"`, "assignee is EMPTY"]
+    ? [`${config.effective.teamClause || "cf[10YYY]"} = "${String(p.teamId).replace(/"/g,'')}"`, "assignee is EMPTY"]
     : [`assignee = "${p.accountId.replace(/"/g,'')}"`];
   if (!isTeam(p) && p.projects && p.projects.length) parts.push(`project in (${p.projects.map(x => `"${x.key.replace(/"/g,'')}"`).join(", ")})`);
   parts.push(donePeriod ? `(statusCategory != Done OR statusCategoryChangedDate >= -${donePeriod}d)` : "statusCategory != Done");
@@ -403,7 +422,7 @@ async function loadTickets(p) {
   tickets[p.accountId] = {...(tickets[p.accountId]||{}), state:"loading"};
   renderTickets(p);
   try {
-    const r = await api("/api/search", { method: "POST", body: JSON.stringify({ jql: jqlFor(p), maxResults: MAX, assignee: isTeam(p) ? undefined : p.accountId }) });
+    const r = await api("/api/search", { method: "POST", body: JSON.stringify({ jql: jqlFor(p), maxResults: opt("maxResults"), assignee: isTeam(p) ? undefined : p.accountId }) });
     const issues = r.issues.sort(byKey);
     tickets[p.accountId] = { state:"ok", issues, more: r.more, url: r.url };
     feed.diff(p, issues, r.more);
@@ -433,12 +452,11 @@ function loadAll() {
 const feed = (() => {
   const read = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-  const FRESH_TTL = 7 * 864e5, LOG_MAX = 300;
+  const FRESH_TTL = () => opt("freshDays") * 864e5, LOG_MAX = 300;
   let snaps = read("jpd.snaps", {});   // rowId -> {more, k: {KEY: {s, c, st, t}}}
   let log = read("jpd.log", []);       // newest first: {id, at, row, name, kind, key, summary, type, detail, read}
   let fresh = read("jpd.fresh", {});   // rowId -> {KEY: firstSeenMs}
-  const now = Date.now();
-  for (const r in fresh) { for (const k in fresh[r]) if (now - fresh[r][k] > FRESH_TTL) delete fresh[r][k]; if (!Object.keys(fresh[r]).length) delete fresh[r]; }
+  const expire = () => { const now = Date.now(); for (const r in fresh) { for (const k in fresh[r]) if (now - fresh[r][k] > FRESH_TTL()) delete fresh[r][k]; if (!Object.keys(fresh[r]).length) delete fresh[r]; } };
   const push = evs => {
     if (!evs.length) return;
     log = evs.concat(log).slice(0, LOG_MAX); write("jpd.log", log); paintBell();
@@ -447,6 +465,7 @@ const feed = (() => {
     team: isTeam(p), url: x.url || browseUrl(key), kind, key, summary: x.s ?? x.summary ?? "", type: x.t ?? x.type ?? "", detail: detail || "", read: false });
 
   return {
+    expire() { expire(); write("jpd.fresh", fresh); },
     isFresh: (row, key) => !!(fresh[row] && fresh[row][key]),
     freshCount: row => Object.keys(fresh[row] || {}).length,
     unread: () => log.filter(e => !e.read).length,
@@ -814,13 +833,14 @@ function renderTickets(p) {
   else h += `<div class="tickets">` + shown.map((i, n) =>
       `<a class="t${n && projKey(i) !== projKey(shown[n-1]) ? " newproj" : ""}${feed.isFresh(p.accountId, i.key) ? " fresh" : ""}" data-key="${esc(i.key)}" style="--ph:${projHue(i.key.split("-")[0])}" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.type)} · ${esc(i.summary)}">
         ${typeIcon(i)}${prioIcon(i)}<span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${feed.isFresh(p.accountId, i.key) ? `<span class="newtag">New</span>` : ""}${esc(i.summary)}</span>${ageCell(i, p)}${spBadge(i)}</a>`).join("") + `</div>`;
-  if (t.more || (iss.length && t.url)) h += `<div class="tfoot"><span>${t.more ? `Showing the ${MAX} most recently updated.` : ""}</span>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">Open in Jira ↗</a>` : ""}</div>`;
+  if (t.more || (iss.length && t.url)) h += `<div class="tfoot"><span>${t.more ? `Showing the ${opt("maxResults")} most recently updated.` : ""}</span>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">Open in Jira ↗</a>` : ""}</div>`;
   cell.innerHTML = h;
 }
 function showBanner(info) {
   const b = $("#banner"); b.className = "banner err"; b.hidden = false;
-  b.innerHTML = `<span>${esc(info.msg)}</span><button class="btn" type="button" id="bannerBtn">Try again</button>`;
+  b.innerHTML = `<span>${esc(info.msg)}</span><span style="display:flex;gap:8px">${info.settings ? `<button class="btn" type="button" id="bannerSet">Open settings</button>` : ""}<button class="btn" type="button" id="bannerBtn">Try again</button></span>`;
   $("#bannerBtn").onclick = () => boot();
+  if (info.settings) $("#bannerSet").onclick = () => openSettings();
 }
 function hideBanner(){ $("#banner").hidden = true; }
 
@@ -953,7 +973,7 @@ function ageCell(i, p) {
   const day = ms => new Date(ms).toLocaleDateString([], {day:"numeric", month:"short", year:"numeric"});
   let tip = `Open ${longDur(now - c)} (created ${day(c)})`;
   if (a) tip += ` · On ${p.displayName} ${longDur(now - a)} (since ${day(a)}${i.assignedFromHistory ? "" : ", assigned at creation"})`;
-  const stale = a && i.cat !== "done" && now - a > 30 * DAY;
+  const stale = a && i.cat !== "done" && now - a > opt("ownedWarnDays") * DAY;
   return `<span class="age" title="${esc(tip)}"><span class="ao">${dur(now - c)}</span><span class="aa${stale ? " old" : ""}">${a ? dur(now - a) : "–"}</span></span>`;
 }
 function fmtSp(n){ return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""); }
@@ -965,12 +985,16 @@ $("#donePeriod").onchange = e => {
   try { localStorage.setItem("jpd.donePeriod", String(donePeriod)); } catch {}
   render(); loadAll();
 };
-// Auto-refresh every minute while the window is visible; catch up at once when it comes back.
-const AUTO_MS = 60 * 1000;
-let lastLoad = Date.now();
+// Auto-refresh (Settings: every N minutes, 0 = off) while the window is visible; catch up when it comes back.
+const autoMs = () => opt("refreshMinutes") * 60 * 1000;
+let lastLoad = Date.now(), autoTimer = null;
 const autoLoad = () => { if (!document.hidden && people.length) { lastLoad = Date.now(); loadAll(); } };
-setInterval(autoLoad, AUTO_MS);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad >= AUTO_MS) autoLoad(); });
+function scheduleAuto() {
+  clearInterval(autoTimer); autoTimer = null;
+  if (autoMs() > 0) autoTimer = setInterval(autoLoad, autoMs());
+  $("#refresh").title = autoMs() > 0 ? `Refresh (also runs every ${opt("refreshMinutes") === 1 ? "minute" : opt("refreshMinutes") + " minutes"})` : "Refresh";
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && autoMs() > 0 && Date.now() - lastLoad >= autoMs()) autoLoad(); });
 
 /* ---------- recent projects: last picks first, then the ones most used on the board ---------- */
 function rememberProjects(list) {
@@ -1132,10 +1156,78 @@ new ResizeObserver(([e]) => document.documentElement.style.setProperty("--hh", M
 /* ---------- boot ---------- */
 async function boot() {
   hideBanner();
+  try { config = await api("/api/config"); } catch {}
+  scheduleAuto(); feed.expire();
   try { await store.init(); } catch (e) { render(); showBanner(e); return; }
   try { notes = await api("/api/notes"); } catch { notes = {}; }
-  render(); paintBell(); loadAll();
+  render(); paintBell();
+  if (config.error) { showBanner({ msg: config.error + ". Fix it in Settings.", settings: true }); return; }
+  loadAll();
 }
+
+/* ---------- settings ---------- */
+function openSettings() {
+  const st = { ...config.settings }, d = config.defaults || {}, eff = config.effective || {};
+  const field = (k, label, hint, ph, type = "text", extra = "") => `<label class="sfield"><span class="slabel">${label}</span>
+    <input name="${k}" type="${type}" ${extra} value="${esc(st[k] ?? "")}" placeholder="${esc(ph)}" spellcheck="false" autocomplete="off">
+    ${hint ? `<span class="shint">${hint}</span>` : ""}</label>`;
+  const sh = openSheet({ title: "Settings", wide: true });
+  sh.body.innerHTML = `<form id="setForm" class="sform">
+    <h3 class="ssec">Jira connection</h3>
+    ${field("envFile", "Credentials file", "Holds ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (and the Zoom webhook). Empty = default.", d.envFile || "~/.release-script.env")}
+    ${field("site", "Jira site", "", d.site || "https://your-site.atlassian.net", "url")}
+    <h3 class="ssec">Custom fields</h3>
+    <div class="sgrid">
+      ${field("spField", "Story points field", "", d.spField || "customfield_10XXX")}
+      ${field("teamField", "Team field", "", d.teamField || "customfield_10YYY")}
+    </div>
+    <div class="scheck"><button class="btn" type="button" id="setCheck">Check connection</button><span id="checkOut" class="shint" aria-live="polite">${config.error ? `<span class="sbad">${esc(config.error)}</span>` : `In use: ${esc(eff.site || "")} · SP ${esc(eff.spField || "")} · Team ${esc(eff.teamField || "")}`}</span></div>
+    <h3 class="ssec">Board</h3>
+    <div class="sgrid">
+      ${field("refreshMinutes", "Auto-refresh, minutes", "0 turns it off", BOARD_DEFAULTS.refreshMinutes, "number", 'min="0" max="120" step="1"')}
+      ${field("maxResults", "Tickets per person, max", "", BOARD_DEFAULTS.maxResults, "number", 'min="10" max="100" step="10"')}
+      ${field("ownedWarnDays", "Highlight “Owned” after, days", "", BOARD_DEFAULTS.ownedWarnDays, "number", 'min="1" max="365"')}
+      ${field("freshDays", "Keep the NEW tag for, days", "", BOARD_DEFAULTS.freshDays, "number", 'min="1" max="60"')}
+    </div>
+    <h3 class="ssec">Zoom</h3>
+    <p class="shint" style="margin:0">${config.zoom ? "✓ Webhook found in the credentials file (ZOOM_WEBHOOK_URL, ZOOM_WEBHOOK_TOKEN)." : "Add ZOOM_WEBHOOK_URL and ZOOM_WEBHOOK_TOKEN to the credentials file to send Daily notes to a Zoom channel."}</p>
+  </form>`;
+  sh.foot.innerHTML = `<span class="stamp" id="setMsg" style="margin-right:auto;align-self:center" aria-live="polite"></span>
+    <button class="btn" type="button" id="shClose">Cancel</button><button class="btn primary" type="button" id="setSave">Save</button>`;
+  $("#shClose").onclick = sh.close;
+  const collect = () => {
+    const out = {};
+    for (const el of $("#setForm").elements) {
+      if (!el.name) continue;
+      const v = el.value.trim();
+      if (v === "") continue;                       // empty = default
+      out[el.name] = el.type === "number" ? Number(v) : v;
+    }
+    return out;
+  };
+  $("#setCheck").onclick = async () => {
+    const o = $("#checkOut"); o.textContent = "Checking…";
+    try {
+      const r = await api("/api/config/check");
+      const f = (n, id) => n ? `${esc(n)} ✓` : `<span class="sbad">${esc(id)} not found</span>`;
+      o.innerHTML = `Connected as <b>${esc(r.user || "?")}</b> · Story points: ${f(r.spName, config.effective.spField)} · Team: ${f(r.teamName, config.effective.teamField)}`;
+    } catch (e) { o.innerHTML = `<span class="sbad">${esc(e.msg || String(e))}</span>`; }
+  };
+  $("#setSave").onclick = async () => {
+    const m = $("#setMsg"); m.textContent = "Saving…";
+    try {
+      const before = JSON.stringify(config.effective);
+      config = await api("/api/config", { method: "PUT", body: JSON.stringify(collect()) });
+      scheduleAuto(); feed.expire();
+      if (config.error) { m.innerHTML = `<span class="sbad">${esc(config.error)}</span>`; showBanner({ msg: config.error + ". Fix it in Settings.", settings: true }); return; }
+      hideBanner(); sh.close();
+      // New site or fields: reload everything; board-only changes just repaint.
+      if (JSON.stringify(config.effective) !== before) { for (const k in tickets) delete tickets[k]; render(); loadAll(); }
+      else render();
+    } catch (e) { m.innerHTML = `<span class="sbad">Not saved: ${esc(e.msg || String(e))}</span>`; }
+  };
+}
+$("#settingsBtn").onclick = () => openSettings();
 boot();
 </script>
 </body>

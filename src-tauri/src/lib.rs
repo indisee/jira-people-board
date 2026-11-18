@@ -1,31 +1,63 @@
 //! Jira People Board — Tauri backend.
-//! Reads ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN from ~/.release-script.env (or $JIRA_ENV_FILE),
+//! Reads ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN from the credentials file (Settings, else $JIRA_ENV_FILE,
+//! else ~/.release-script.env),
 //! talks to Jira REST, keeps the people list in the app data folder, and serves avatars
 //! through the `avatar://` protocol so the token never reaches the web page.
 
 use base64::Engine;
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use serde_json::{json, Value};
-use std::{collections::HashMap, fs, path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, fs, path::PathBuf, sync::{Arc, Mutex, RwLock}};
 use tauri::{http::Response, Manager, State};
 
 const DEFAULT_SITE: &str = "https://your-site.atlassian.net";
 const DEFAULT_SP_FIELD: &str = "customfield_10XXX"; // story points
-const DEFAULT_TEAM_CLAUSE: &str = "cf[10YYY]"; // Team field (customfield_10YYY)
+const DEFAULT_TEAM_FIELD: &str = "customfield_10YYY"; // Team field
 
 struct Jira {
     client: reqwest::Client,
     site: String,
     auth: String,
     sp_field: String,
+    team_field: String,
     team_clause: String,
+    env_path: PathBuf,
     /// Zoom incoming webhook (ZOOM_WEBHOOK_URL, ZOOM_WEBHOOK_TOKEN) for the daily report, if set.
     zoom: Option<(String, String)>,
 }
 
 struct AppState {
-    jira: Result<Jira, String>,
+    /// Rebuilt when Settings are saved, so a new credentials file or field id applies without a restart.
+    jira: RwLock<Result<Arc<Jira>, String>>,
     avatars: Mutex<HashMap<String, (String, Vec<u8>)>>,
+    home: PathBuf,
+}
+
+/// Settings the user can change in the app (settings.json in the app data folder).
+/// Empty strings / missing keys fall back to environment variables, then the credentials file, then defaults.
+fn settings_read(app: &tauri::AppHandle) -> Value {
+    data_file(app, "settings.json")
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .filter(|v: &Value| v.is_object())
+        .unwrap_or_else(|| json!({}))
+}
+fn setting(s: &Value, k: &str) -> Option<String> {
+    s[k].as_str().map(str::trim).filter(|v| !v.is_empty()).map(String::from)
+}
+/// "customfield_12345" -> "cf[12345]" for JQL; anything else is used as written.
+fn jql_clause(field: &str) -> String {
+    match field.strip_prefix("customfield_") {
+        Some(n) if n.chars().all(|c| c.is_ascii_digit()) => format!("cf[{n}]"),
+        _ => field.to_string(),
+    }
+}
+fn expand_home(p: &str, home: &PathBuf) -> PathBuf {
+    match p.strip_prefix("~/") {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(p),
+    }
 }
 
 fn read_env(path: &PathBuf) -> Result<HashMap<String, String>, String> {
@@ -46,17 +78,23 @@ fn read_env(path: &PathBuf) -> Result<HashMap<String, String>, String> {
     Ok(out)
 }
 
-fn load_jira(home: PathBuf) -> Result<Jira, String> {
-    let env_path = std::env::var("JIRA_ENV_FILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home.join(".release-script.env"));
+fn default_env_path(home: &PathBuf) -> PathBuf {
+    std::env::var("JIRA_ENV_FILE").map(PathBuf::from).unwrap_or_else(|_| home.join(".release-script.env"))
+}
+
+fn load_jira(home: &PathBuf, settings: &Value) -> Result<Jira, String> {
+    let env_path = setting(settings, "envFile").map(|p| expand_home(&p, home)).unwrap_or_else(|| default_env_path(home));
     let env = read_env(&env_path)?;
     let missing = |k: &str| format!("CONFIG:{k} is missing in {}", env_path.display());
     let email = env.get("ATLASSIAN_EMAIL").ok_or_else(|| missing("ATLASSIAN_EMAIL"))?;
     let token = env.get("ATLASSIAN_API_TOKEN").ok_or_else(|| missing("ATLASSIAN_API_TOKEN"))?;
-    let pick = |k: &str, d: &str| {
-        std::env::var(k).ok().or_else(|| env.get(k).cloned()).unwrap_or_else(|| d.to_string())
+    let pick = |sk: &str, k: &str, d: &str| {
+        setting(settings, sk)
+            .or_else(|| std::env::var(k).ok())
+            .or_else(|| env.get(k).cloned())
+            .unwrap_or_else(|| d.to_string())
     };
+    let team_field = pick("teamField", "JIRA_TEAM_FIELD", DEFAULT_TEAM_FIELD);
     let auth = format!(
         "Basic {}",
         base64::engine::general_purpose::STANDARD.encode(format!("{email}:{token}"))
@@ -67,10 +105,12 @@ fn load_jira(home: PathBuf) -> Result<Jira, String> {
         .map_err(|e| e.to_string())?;
     Ok(Jira {
         client,
-        site: pick("JIRA_SITE", DEFAULT_SITE).trim_end_matches('/').to_string(),
+        site: pick("site", "JIRA_SITE", DEFAULT_SITE).trim_end_matches('/').to_string(),
         auth,
-        sp_field: pick("JIRA_SP_FIELD", DEFAULT_SP_FIELD),
-        team_clause: pick("JIRA_TEAM_CLAUSE", DEFAULT_TEAM_CLAUSE),
+        sp_field: pick("spField", "JIRA_SP_FIELD", DEFAULT_SP_FIELD),
+        team_clause: jql_clause(&team_field),
+        team_field,
+        env_path: env_path.clone(),
         zoom: match (env.get("ZOOM_WEBHOOK_URL"), env.get("ZOOM_WEBHOOK_TOKEN")) {
             (Some(u), Some(t)) if !u.is_empty() && !t.is_empty() => Some((u.clone(), t.clone())),
             _ => None,
@@ -109,8 +149,8 @@ impl Jira {
     }
 }
 
-fn jira<'a>(s: &'a AppState) -> Result<&'a Jira, String> {
-    s.jira.as_ref().map_err(|e| e.clone())
+fn jira(s: &AppState) -> Result<Arc<Jira>, String> {
+    s.jira.read().unwrap().clone()
 }
 fn enc(s: &str) -> String {
     utf8_percent_encode(s, NON_ALPHANUMERIC).to_string()
@@ -185,13 +225,65 @@ fn notes_put(app: tauri::AppHandle, day: String, id: String, done: String, doing
     write_json(&path, &all)
 }
 
+/// Settings as saved, the values actually in use, and whether Jira / Zoom are set up.
+fn config_view(app: &tauri::AppHandle, state: &AppState) -> Value {
+    let saved = settings_read(app);
+    let home = &state.home;
+    match jira(state) {
+        Ok(j) => json!({
+            "settings": saved,
+            "effective": { "envFile": j.env_path.display().to_string(), "site": j.site, "spField": j.sp_field,
+                           "teamField": j.team_field, "teamClause": j.team_clause },
+            "defaults": { "envFile": default_env_path(home).display().to_string(), "site": DEFAULT_SITE,
+                          "spField": DEFAULT_SP_FIELD, "teamField": DEFAULT_TEAM_FIELD },
+            "error": Value::Null, "zoom": j.zoom.is_some(),
+        }),
+        Err(e) => json!({
+            "settings": saved,
+            "effective": { "teamClause": jql_clause(&setting(&saved, "teamField").unwrap_or_else(|| DEFAULT_TEAM_FIELD.into())) },
+            "defaults": { "envFile": default_env_path(home).display().to_string(), "site": DEFAULT_SITE,
+                          "spField": DEFAULT_SP_FIELD, "teamField": DEFAULT_TEAM_FIELD },
+            "error": e.trim_start_matches("CONFIG:"), "zoom": false,
+        }),
+    }
+}
+
+#[tauri::command]
+fn config_get(app: tauri::AppHandle, state: State<'_, AppState>) -> Value {
+    config_view(&app, &state)
+}
+
+/// Save settings and reconnect with them.
+#[tauri::command]
+fn config_save(app: tauri::AppHandle, state: State<'_, AppState>, settings: Value) -> Result<Value, String> {
+    if !settings.is_object() {
+        return Err("Expected an object".into());
+    }
+    write_json(&data_file(&app, "settings.json")?, &settings)?;
+    *state.jira.write().unwrap() = load_jira(&state.home, &settings).map(Arc::new);
+    state.avatars.lock().unwrap().clear();
+    Ok(config_view(&app, &state))
+}
+
+/// Check the connection: who the token belongs to, and the names of the configured custom fields.
+#[tauri::command]
+async fn config_check(state: State<'_, AppState>) -> Result<Value, String> {
+    let j = jira(&state)?;
+    let me = j.req(reqwest::Method::GET, "/rest/api/3/myself", None).await?;
+    let fields = j.req(reqwest::Method::GET, "/rest/api/3/field", None).await.unwrap_or(json!([]));
+    let name_of = |id: &str| {
+        fields.as_array().and_then(|a| a.iter().find(|f| f["id"] == id)).and_then(|f| f["name"].as_str()).map(String::from)
+    };
+    Ok(json!({ "user": me["displayName"], "email": me["emailAddress"], "spName": name_of(&j.sp_field), "teamName": name_of(&j.team_field) }))
+}
+
 /// Post the daily report to the Zoom channel: rich ("full") format first, plain text if Zoom rejects it.
 /// Returns the format that was accepted.
 #[tauri::command]
 async fn zoom_send(state: State<'_, AppState>, full: Value, text: String) -> Result<String, String> {
     let j = jira(&state)?;
     let (url, token) = j.zoom.as_ref().ok_or(
-        "CONFIG:ZOOM_WEBHOOK_URL / ZOOM_WEBHOOK_TOKEN are missing in ~/.release-script.env",
+        "CONFIG:ZOOM_WEBHOOK_URL / ZOOM_WEBHOOK_TOKEN are missing in the credentials file",
     )?;
     if !url.starts_with("https://integrations.zoom.us/") {
         return Err("CONFIG:ZOOM_WEBHOOK_URL must be an https://integrations.zoom.us/ webhook".into());
@@ -320,7 +412,7 @@ async fn issues_search(
                 .as_array()
                 .map(|v| v.iter().filter_map(|n| n["id"].as_str().map(String::from)).collect())
                 .unwrap_or_default();
-            assigned_since(j, &ids, a).await.unwrap_or_default()
+            assigned_since(&j, &ids, a).await.unwrap_or_default()
         }
         None => HashMap::new(),
     };
@@ -440,7 +532,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let home = app.path().home_dir().unwrap_or_default();
-            app.manage(AppState { jira: load_jira(home), avatars: Mutex::new(HashMap::new()) });
+            let settings = settings_read(app.handle());
+            let jira = load_jira(&home, &settings).map(Arc::new);
+            app.manage(AppState { jira: RwLock::new(jira), avatars: Mutex::new(HashMap::new()), home });
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("avatar", |ctx, request, responder| {
@@ -466,6 +560,9 @@ pub fn run() {
             notes_load,
             notes_put,
             zoom_send,
+            config_get,
+            config_save,
+            config_check,
             users_search,
             projects_search,
             teams_search,
