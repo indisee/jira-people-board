@@ -151,6 +151,7 @@ const server = http.createServer(async (req, res) => {
             assignedAt: since[n.id] ? new Date(since[n.id]).toISOString() : (assignee ? (f.created || "") : ""),
             assignedFromHistory: !!since[n.id],
             assignee: (f.assignee && f.assignee.displayName) || "",
+            priority: (f.priority && f.priority.name) || "", priorityIcon: (f.priority && f.priority.iconUrl) || "",
             url: `${SITE}/browse/${n.key}`,
           };
         }),

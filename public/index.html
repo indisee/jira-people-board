@@ -73,7 +73,7 @@ button.chip:hover{background:hsl(var(--ph) var(--pt-sat) var(--pt-l-hover))}
 .pactions{display:flex;gap:2px;margin-top:8px;margin-left:-8px}
 
 .tickets{display:grid;gap:2px;min-width:0}
-.t{--ph:185;display:grid;grid-template-columns:16px 92px 96px minmax(0,1fr) 84px 30px;gap:10px;align-items:center;padding:6px 8px;border-radius:5px;text-decoration:none;color:inherit;background:hsl(var(--ph) var(--pt-sat) var(--pt-l))}
+.t{--ph:185;display:grid;grid-template-columns:16px 14px 92px 96px minmax(0,1fr) 84px 30px;gap:10px;align-items:center;padding:6px 8px;border-radius:5px;text-decoration:none;color:inherit;background:hsl(var(--ph) var(--pt-sat) var(--pt-l))}
 .throw{display:flex;justify-content:space-between;gap:10px;padding-right:12px}
 .hcols{display:flex;gap:10px}
 .h-age{width:84px;text-align:right;white-space:nowrap;letter-spacing:.03em}
@@ -178,12 +178,25 @@ tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:c
   tbody tr{border-bottom:1px solid var(--line);padding-bottom:12px}
   .addrow{padding-bottom:0}.addrow td{padding:0}
   .t{grid-template-columns:16px 80px minmax(0,1fr) auto;align-items:start}
+  .t .pr{grid-column:1;grid-row:2}
   .t .sp{grid-column:4;grid-row:1}
   .t .age{grid-column:4;grid-row:2;align-self:start}
-  .t .ti{grid-row:1/3}
+  .t .ti{grid-row:1}
   .t .k{grid-row:1/3}
   .t .pill{grid-column:3;grid-row:1}
   .t .s{grid-column:3;white-space:normal}
+}
+/* Priority mark: Jira's icon, falling back to an arrow in the priority colour */
+.pr{position:relative;width:14px;height:14px;display:grid;place-items:center;color:var(--pc);font-size:11px;font-weight:700;line-height:1}
+.pr img{position:absolute;inset:0;width:14px;height:14px}
+/* Sticky top: page header + toolbar, then the table head right under it */
+@media (min-width:721px){
+  header{position:sticky;top:0;z-index:10;background:var(--bg);padding-block:12px;margin-block:-12px}
+  .board{overflow:visible}
+  thead th{position:sticky;top:var(--hh,0px);z-index:5;border-bottom:0;box-shadow:inset 0 -1px 0 var(--line)}
+  thead th:first-child{border-top-left-radius:var(--radius)}
+  thead th:last-child{border-top-right-radius:var(--radius)}
+  .addrow .addbtn{border-radius:0 0 var(--radius) var(--radius)}
 }
 /* Daily notes: Done / Doing per person, Next, History, team day view */
 .daily{display:grid;gap:6px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
@@ -366,6 +379,20 @@ function typeMark(type) {
   if (/improvement|feature/.test(t)) return {c:"#63ba3c", g:"↑"};
   if (/release/.test(t)) return {c:"#ff991f", g:"◆"};
   return {c:"#4bade8", g:"✓"};
+}
+function prioMark(name) {
+  const n = (name || "").toLowerCase();
+  if (/highest|blocker|critical|urgent|^p0$|^p1$/.test(n)) return {c:"#cd1317", g:"⇈"};
+  if (/high|major|^p2$/.test(n)) return {c:"#e9494a", g:"↑"};
+  if (/lowest|trivial|^p5$/.test(n)) return {c:"#0065ff", g:"⇊"};
+  if (/low|minor|^p4$/.test(n)) return {c:"#2684ff", g:"↓"};
+  return {c:"#e97f33", g:"="};
+}
+function prioIcon(i) {
+  if (!i.priority) return `<span class="pr" aria-hidden="true"></span>`;
+  const m = prioMark(i.priority);
+  const img = i.priorityIcon ? `<img src="${imgSrc(i.priorityIcon)}" alt="" onerror="this.remove()">` : "";
+  return `<span class="pr" style="--pc:${m.c}" title="Priority: ${esc(i.priority)}" aria-label="Priority ${esc(i.priority)}"><span>${m.g}</span>${img}</span>`;
 }
 function typeIcon(i) {
   const m = typeMark(i.type);
@@ -740,7 +767,7 @@ function renderTickets(p) {
   if (!shown.length) h += `<div class="empty">No ${showDone ? "" : "open "}${isTeam(p) ? "unassigned tickets for this team" : "tickets assigned"} in ${f && f.size ? "the selected projects" : "these projects"}.</div>`;
   else h += `<div class="tickets">` + shown.map((i, n) =>
       `<a class="t${n && projKey(i) !== projKey(shown[n-1]) ? " newproj" : ""}${feed.isFresh(p.accountId, i.key) ? " fresh" : ""}" data-key="${esc(i.key)}" style="--ph:${projHue(i.key.split("-")[0])}" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.type)} · ${esc(i.summary)}">
-        ${typeIcon(i)}<span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${feed.isFresh(p.accountId, i.key) ? `<span class="newtag">New</span>` : ""}${esc(i.summary)}</span>${ageCell(i, p)}${spBadge(i)}</a>`).join("") + `</div>`;
+        ${typeIcon(i)}${prioIcon(i)}<span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${feed.isFresh(p.accountId, i.key) ? `<span class="newtag">New</span>` : ""}${esc(i.summary)}</span>${ageCell(i, p)}${spBadge(i)}</a>`).join("") + `</div>`;
   if (t.more || (iss.length && t.url)) h += `<div class="tfoot"><span>${t.more ? `Showing the ${MAX} most recently updated.` : ""}</span>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">Open in Jira ↗</a>` : ""}</div>`;
   cell.innerHTML = h;
 }
@@ -1052,6 +1079,9 @@ function openModal(existing) {
   }
   paint();
 }
+
+// The table head sticks right under the page header, whose height changes as the toolbar wraps.
+new ResizeObserver(([e]) => document.documentElement.style.setProperty("--hh", Math.round(e.target.getBoundingClientRect().height) + "px")).observe($("header"));
 
 /* ---------- boot ---------- */
 async function boot() {

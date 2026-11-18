@@ -315,6 +315,8 @@ async fn issues_search(
                 "assignedAt": assigned_at,
                 "assignedFromHistory": hist.is_some(),
                 "assignee": f["assignee"]["displayName"].as_str().unwrap_or(""),
+                "priority": f["priority"]["name"].as_str().unwrap_or(""),
+                "priorityIcon": f["priority"]["iconUrl"].as_str().unwrap_or(""),
                 "url": format!("{}/browse/{}", j.site, key),
             })
         })
