@@ -684,24 +684,36 @@ async function copyText(t) {
 /* Zoom report: everyone with notes that day (no "No notes" line), as a rich card, plus a plain-text fallback. */
 function zoomPayload(day) {
   const d = notes[day] || {}, ppl = people.filter(p => !isTeam(p) && d[p.accountId]);
-  const body = ppl.map(p => {
+  // Zoom trims normal spaces, so indent with em spaces; a line of box-drawing dashes separates people.
+  const IND = "\u2003\u2003", RULE = "─".repeat(28);
+  const indent = t => t.trim().split(/\r?\n/).map(l => IND + l).join("\n");
+  const body = [];
+  ppl.forEach((p, idx) => {
     const n = d[p.accountId], items = [];
-    if (n.done.trim()) items.push({ key: "✅ Done", value: n.done.trim(), short: false });
-    if (n.doing.trim()) items.push({ key: "🔜 Doing", value: n.doing.trim(), short: false });
-    return { type: "section", sidebar_color: "#0b6b73", sections: [
+    if (n.done.trim()) items.push({ key: IND + "✅ Done", value: indent(n.done), short: false });
+    if (n.doing.trim()) items.push({ key: IND + "🔜 Doing", value: indent(n.doing), short: false });
+    if (idx) body.push({ type: "message", text: RULE });
+    body.push({ type: "section", sidebar_color: hslHex(hueOf(p.accountId || p.displayName), 55, 40), sections: [
       { type: "message", text: p.displayName, style: { bold: true } },
       { type: "fields", items },
-    ] };
+    ] });
   });
   const full = { content: { head: { text: "Daily stand-up", sub_head: { text: fmtDay(day) } }, body } };
   const pad = t => t.trim().split(/\r?\n/).map(l => "      " + l).join("\n");
-  const text = [`📋 Daily stand-up · ${fmtDay(day)}`, ...ppl.map(p => {
-    const n = d[p.accountId], out = ["", `👤 ${p.displayName}`];
+  const text = [`📋 Daily stand-up · ${fmtDay(day)}`, ...ppl.map((p, idx) => {
+    const n = d[p.accountId], out = [idx ? RULE : "", `👤 ${p.displayName}`];
     if (n.done.trim()) out.push("   ✅ Done:", pad(n.done));
     if (n.doing.trim()) out.push("   🔜 Doing:", pad(n.doing));
     return out.join("\n");
   })].join("\n");
   return { full, text, count: ppl.length };
+}
+// HSL -> #rrggbb, for the per-person stripe colour (same hue as their avatar).
+function hslHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, "0");
+  return "#" + f(0) + f(8) + f(4);
 }
 const zoomSentKey = "jpd.zoomSent";
 const zoomSent = () => { try { return JSON.parse(localStorage.getItem(zoomSentKey)) || {}; } catch { return {}; } };
