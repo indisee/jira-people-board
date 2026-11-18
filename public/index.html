@@ -723,7 +723,7 @@ function renderTickets(p) {
   const iss = t.issues || [];
   if (meta) {
     const prog = iss.filter(i => i.cat === "indeterminate").length;
-    meta.textContent = `${iss.length}${t.more ? "+" : ""} ${isTeam(p) ? "unassigned" : showDone ? "tickets" : "open"}${doneN(iss) ? ` · ${doneN(iss)} done` : ""}${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP open` : ""}`;
+    meta.textContent = `${iss.length}${t.more ? "+" : ""} ${isTeam(p) ? "unassigned" : showDone ? "tickets" : "open"}${doneN(iss) ? ` · ${doneN(iss)} done` : ""}${prog ? ` · ${prog} in progress` : ""}`;
     const nf = iss.filter(i => feed.isFresh(p.accountId, i.key)).length;
     if (nf) meta.insertAdjacentHTML("beforeend", ` · <span class="nnew">${nf} new</span>`);
   }
