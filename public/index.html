@@ -225,9 +225,9 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .spage .sfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 24px;border-top:1px solid var(--line);background:var(--surface-2)}
 .sform{display:grid;gap:12px}
 .ssec{margin:6px 0 -4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
-.sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
 @media (max-width:560px){.sgrid{grid-template-columns:1fr}}
-.sfield{display:grid;gap:4px}
+.sfield{display:grid;gap:4px;align-content:start}
 .slabel{font-size:.85rem;font-weight:500}
 .srow{display:flex;gap:8px;align-items:center}
 .srow input{flex:1}
@@ -689,28 +689,16 @@ async function copyText(t) {
 /* Zoom report: everyone with notes that day (no "No notes" line), as a rich card, plus a plain-text fallback. */
 function zoomPayload(day) {
   const d = notes[day] || {}, ppl = people.filter(p => !isTeam(p) && d[p.accountId]);
-  // Zoom trims normal spaces, so indent with em spaces; a line of box-drawing dashes separates people.
-  const IND = "\u2003\u2003", RULE = "─".repeat(28);
-  const indent = t => t.trim().split(/\r?\n/).map(l => IND + l).join("\n");
-  const body = [];
-  ppl.forEach((p, idx) => {
-    const n = d[p.accountId], items = [];
-    if (n.done.trim()) items.push({ key: IND + "✅ Done", value: indent(n.done), short: false });
-    if (n.doing.trim()) items.push({ key: IND + "🔜 Doing", value: indent(n.doing), short: false });
-    if (idx) body.push({ type: "message", text: RULE });
-    body.push({ type: "section", sidebar_color: hslHex(hueOf(p.accountId || p.displayName), 55, 40), sections: [
-      { type: "message", text: p.displayName, style: { bold: true } },
-      { type: "fields", items },
-    ] });
-  });
-  const full = { content: { head: { text: "Daily stand-up", sub_head: { text: fmtDay(day) } }, body } };
-  const pad = t => t.trim().split(/\r?\n/).map(l => "      " + l).join("\n");
-  const text = [`📋 Daily stand-up · ${fmtDay(day)}`, ...ppl.map((p, idx) => {
-    const n = d[p.accountId], out = [idx ? RULE : "", `👤 ${p.displayName}`];
-    if (n.done.trim()) out.push("   ✅ Done:", pad(n.done));
-    if (n.doing.trim()) out.push("   🔜 Doing:", pad(n.doing));
-    return out.join("\n");
-  })].join("\n");
+  // Compact: a coloured stripe per person, bold name, then one block with ✅ / 🔜 lines (≈3 lines a person).
+  // Zoom trims ordinary leading spaces, so wrapped note lines continue after an em-space indent.
+  const lines = (mark, t) => t.trim().split(/\r?\n/).map((l, i) => (i ? "\u2003 " : mark + " ") + l.trim()).join("\n");
+  const block = n => [n.done.trim() && lines("✅", n.done), n.doing.trim() && lines("🔜", n.doing)].filter(Boolean).join("\n");
+  const body = ppl.map(p => ({ type: "section", sidebar_color: hslHex(hueOf(p.accountId || p.displayName), 55, 40), sections: [
+    { type: "message", text: p.displayName, style: { bold: true } },
+    { type: "message", text: block(d[p.accountId]) },
+  ] }));
+  const full = { content: { head: { text: `Daily stand-up · ${fmtDay(day)}` }, body } };
+  const text = [`📋 Daily stand-up · ${fmtDay(day)}`, ...ppl.map(p => `\n👤 ${p.displayName}\n${block(d[p.accountId])}`)].join("\n");
   return { full, text, count: ppl.length };
 }
 // HSL -> #rrggbb, for the per-person stripe colour (same hue as their avatar).
