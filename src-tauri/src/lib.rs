@@ -232,7 +232,7 @@ async fn issues_search(
     let body = json!({
         "jql": jql,
         "maxResults": max_results.unwrap_or(100),
-        "fields": ["summary", "status", "issuetype", "priority", "project", "created", "updated", j.sp_field],
+        "fields": ["summary", "status", "issuetype", "priority", "project", "created", "updated", "assignee", j.sp_field],
     });
     let r = j.req(reqwest::Method::POST, "/rest/api/3/search/jql", Some(body)).await?;
     let since = match &assignee {
@@ -273,6 +273,7 @@ async fn issues_search(
                 "updated": f["updated"].as_str().unwrap_or(""),
                 "assignedAt": assigned_at,
                 "assignedFromHistory": hist.is_some(),
+                "assignee": f["assignee"]["displayName"].as_str().unwrap_or(""),
                 "url": format!("{}/browse/{}", j.site, key),
             })
         })

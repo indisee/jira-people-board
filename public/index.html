@@ -185,6 +185,33 @@ tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:c
   .t .pill{grid-column:3;grid-row:1}
   .t .s{grid-column:3;white-space:normal}
 }
+/* Change feed: highlighted new tickets, bell + log panel */
+.t.fresh{box-shadow:inset 3px 0 0 var(--accent)}
+.newtag{display:inline-block;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-fg);background:var(--accent);border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px}
+.pmeta .nnew{color:var(--accent);font-weight:600}
+.bellwrap{position:relative}
+.bell{display:inline-flex;align-items:center;gap:6px;position:relative}
+.bell svg{width:16px;height:16px}
+.bell .badge{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--accent);color:var(--accent-fg);font-size:.7rem;font-weight:700;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
+.npanel{position:absolute;right:0;top:calc(100% + 6px);z-index:15;width:min(420px,calc(100vw - 32px));max-height:min(70vh,560px);display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 40px rgb(0 0 0 / .2)}
+.nhead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.nhead h2{margin:0;font-family:var(--f-display);font-size:1rem}
+.nlist{overflow:auto;padding:4px 0}
+.nday{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;padding:10px 12px 4px}
+.nev{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:8px;align-items:start;padding:7px 12px;text-decoration:none;color:inherit}
+.nev:hover{background:var(--row-hover)}
+.nev.unread{background:var(--accent-soft)}
+.nev .nk{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:.8rem;font-weight:700;line-height:1}
+.nev.added .nk{background:var(--prog-bg);color:var(--prog)}
+.nev.done .nk{background:var(--done-bg);color:var(--done)}
+.nev.left .nk{background:var(--todo-bg);color:var(--todo)}
+.nev .nl1{display:flex;gap:6px;align-items:baseline;min-width:0}
+.nev .nkey{font-family:var(--f-mono);font-size:.78rem;color:var(--accent);white-space:nowrap}
+.nev .nsum{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nev .nl2{font-size:.78rem;color:var(--muted)}
+.nev .ntime{font-size:.75rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.nempty{color:var(--muted);padding:18px 12px;text-align:center}
+.nfoot{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--line)}
 </style>
 <style>.avatar img{position:absolute;inset:0;border-radius:50%}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
@@ -202,6 +229,10 @@ tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:c
       <span class="stamp" id="stamp"></span>
       <span class="seg" role="group" aria-label="Fold people">
         <button class="btn" id="foldAll" type="button" title="Collapse every person">▸ Collapse all</button><button class="btn" id="unfoldAll" type="button" title="Expand every person">▾ Expand all</button>
+      </span>
+      <span class="bellwrap">
+        <button class="btn bell" id="bell" type="button" aria-haspopup="true" aria-expanded="false" title="What changed on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span>Changes</span><span class="badge" id="bellBadge" hidden></span></button>
+        <div class="npanel" id="npanel" hidden></div>
       </span>
       <button class="btn" id="refresh" type="button">Refresh</button>
     </div>
@@ -322,6 +353,7 @@ async function loadTickets(p) {
     const r = await api("/api/search", { method: "POST", body: JSON.stringify({ jql: jqlFor(p), maxResults: MAX, assignee: isTeam(p) ? undefined : p.accountId }) });
     const issues = r.issues.sort(byKey);
     tickets[p.accountId] = { state:"ok", issues, more: r.more, url: r.url };
+    feed.diff(p, issues, r.more);
     setStamp();
   } catch (e) {
     tickets[p.accountId] = { ...(tickets[p.accountId]||{}), state:"err", err:e };
@@ -334,6 +366,139 @@ async function runPool(list, fn, n=4) {
   const q = list.slice(); await Promise.all(Array.from({length:Math.min(n,q.length)}, async () => { while (q.length) await fn(q.shift()); }));
 }
 function loadAll() { hideBanner(); runPool(people, loadTickets); }
+
+/* ---------- change feed ----------
+   After each successful load a row's tickets are compared with the previous load (kept in localStorage,
+   so it works across restarts). Open tickets that appear are "added" and stay highlighted until opened
+   or marked seen; open tickets that go to Done or drop off the row are logged with the reason. */
+const feed = (() => {
+  const read = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
+  const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  const FRESH_TTL = 7 * 864e5, LOG_MAX = 300;
+  let snaps = read("jpd.snaps", {});   // rowId -> {more, k: {KEY: {s, c, st, t}}}
+  let log = read("jpd.log", []);       // newest first: {id, at, row, name, kind, key, summary, type, detail, read}
+  let fresh = read("jpd.fresh", {});   // rowId -> {KEY: firstSeenMs}
+  const now = Date.now();
+  for (const r in fresh) { for (const k in fresh[r]) if (now - fresh[r][k] > FRESH_TTL) delete fresh[r][k]; if (!Object.keys(fresh[r]).length) delete fresh[r]; }
+  const push = evs => {
+    if (!evs.length) return;
+    log = evs.concat(log).slice(0, LOG_MAX); write("jpd.log", log); paintBell();
+  };
+  const ev = (p, kind, key, x, detail) => ({ id: Math.random().toString(36).slice(2), at: Date.now(), row: p.accountId, name: p.displayName,
+    team: isTeam(p), url: x.url || browseUrl(key), kind, key, summary: x.s ?? x.summary ?? "", type: x.t ?? x.type ?? "", detail: detail || "", read: false });
+
+  return {
+    isFresh: (row, key) => !!(fresh[row] && fresh[row][key]),
+    freshCount: row => Object.keys(fresh[row] || {}).length,
+    unread: () => log.filter(e => !e.read).length,
+    all: () => log,
+    diff(p, issues, more) {
+      const id = p.accountId, prev = snaps[id], cur = {};
+      for (const i of issues) cur[i.key] = { s: i.summary, c: i.cat, st: i.status, t: i.type };
+      snaps[id] = { more: !!more, k: cur }; write("jpd.snaps", snaps);
+      if (!prev || prev.more || more) return;          // first load is the baseline; a cut-off list can't be compared
+      const evs = [], gone = [];
+      for (const i of issues) {
+        const was = prev.k[i.key];
+        if (!was && i.cat !== "done") {
+          evs.push(ev(p, "added", i.key, i, isTeam(p) ? "New unassigned ticket" : "Assigned · " + i.status));
+          (fresh[id] = fresh[id] || {})[i.key] = Date.now();
+        } else if (was && was.c !== "done" && i.cat === "done") evs.push(ev(p, "done", i.key, i, "Moved to " + i.status));
+      }
+      for (const k in prev.k) if (!cur[k] && prev.k[k].c !== "done") gone.push(k);
+      write("jpd.fresh", fresh);
+      push(evs);
+      if (gone.length) this.explain(p, gone, prev.k);
+    },
+    async explain(p, gone, was) {
+      const found = {}, checked = new Set();
+      const look = async keys => {
+        const r = await api("/api/search", { method: "POST", body: JSON.stringify({ jql: `key in (${keys.map(k => `"${k}"`).join(", ")})`, maxResults: keys.length }) });
+        for (const i of r.issues) found[i.key] = i;
+        keys.forEach(k => checked.add(k));
+      };
+      // One deleted or moved key fails the whole query, so fall back to asking key by key.
+      try { await look(gone); }
+      catch { await Promise.all(gone.map(k => look([k]).catch(e => { if (/does not exist|not exist/i.test(e && e.msg || "")) checked.add(k); }))); }
+      push(gone.map(k => {
+        const i = found[k], w = was[k];
+        let why = checked.has(k) ? "Not found in Jira (deleted or moved)" : "Left the row (couldn't check why)";
+        if (i) {
+          if (i.cat === "done") why = "Moved to " + i.status;
+          else if (isTeam(p)) why = i.assignee ? "Picked up by " + i.assignee : "Moved to another team";
+          else if (!i.assignee) why = "Unassigned";
+          else if (i.assignee !== p.displayName) why = "Reassigned to " + i.assignee;
+          else why = "Moved out of the tracked projects";
+        }
+        return ev(p, "left", k, i || w, why);
+      }));
+      if (fresh[p.accountId]) { gone.forEach(k => delete fresh[p.accountId][k]); write("jpd.fresh", fresh); }
+    },
+    seen(row, key) {
+      if (!fresh[row] || !fresh[row][key]) return false;
+      delete fresh[row][key]; write("jpd.fresh", fresh); return true;
+    },
+    seenAll() { fresh = {}; write("jpd.fresh", fresh); },
+    markRead() { if (log.some(e => !e.read)) { log.forEach(e => e.read = true); write("jpd.log", log); } paintBell(); },
+    clearLog() { log = []; write("jpd.log", log); paintBell(); },
+    // Row was added or its projects changed: start a new baseline instead of logging the difference.
+    reset(row) { delete snaps[row]; delete fresh[row]; write("jpd.snaps", snaps); write("jpd.fresh", fresh); },
+  };
+})();
+
+// Jira link for a key, built from any loaded ticket's URL (the site differs per setup).
+function browseUrl(key) {
+  for (const r in tickets) { const i = (tickets[r].issues || [])[0]; if (i && i.url) return i.url.replace(/\/browse\/[^/]+$/, "/browse/" + key); }
+  return "";
+}
+function paintBell() {
+  const n = feed.unread(), b = $("#bellBadge");
+  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n);
+  $("#bell").title = n ? `${n} new change${n === 1 ? "" : "s"} on the board` : "What changed on the board";
+  if (!$("#npanel").hidden) paintPanel();
+}
+const relTime = ms => new Date(ms).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+function dayLabel(ms) {
+  const d = new Date(ms), today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((today - new Date(d).setHours(0,0,0,0)) / 864e5);
+  return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : d.toLocaleDateString([], {weekday:"short", day:"numeric", month:"short"});
+}
+function paintPanel() {
+  const el = $("#npanel"), log = feed.all();
+  let h = `<div class="nhead"><h2>Changes</h2><span class="stamp">${log.length ? `${log.length} event${log.length === 1 ? "" : "s"}` : ""}</span></div><div class="nlist">`;
+  if (!log.length) h += `<div class="nempty">Nothing yet. Tickets that join or leave a row between refreshes show up here.</div>`;
+  let day = "";
+  for (const e of log) {
+    const dl = dayLabel(e.at);
+    if (dl !== day) { day = dl; h += `<div class="nday">${esc(dl)}</div>`; }
+    const url = e.url || browseUrl(e.key);
+    const mark = e.kind === "added" ? "+" : e.kind === "done" ? "✓" : "−";
+    const tag = url ? "a" : "div";
+    h += `<${tag} class="nev ${e.kind}${e.read ? "" : " unread"}" ${url ? `href="${esc(url)}" target="_blank" rel="noopener"` : ""} data-key="${esc(e.key)}" data-row="${esc(e.row)}">
+      <span class="nk" aria-label="${esc(e.kind)}">${mark}</span>
+      <span style="min-width:0"><span class="nl1"><span class="nkey">${esc(e.key)}</span><span class="nsum">${esc(e.summary)}</span></span>
+      <span class="nl2">${esc(e.name)} · ${esc(e.detail)}</span></span>
+      <span class="ntime">${relTime(e.at)}</span></${tag}>`;
+  }
+  h += `</div><div class="nfoot"><button class="btn ghost" type="button" id="nSeen" title="Remove the NEW highlight from every ticket">Clear highlights</button><button class="btn ghost danger" type="button" id="nClear" ${log.length ? "" : "disabled"}>Clear log</button></div>`;
+  el.innerHTML = h;
+}
+function togglePanel(open) {
+  const el = $("#npanel"), willOpen = open ?? el.hidden;
+  if (willOpen === !el.hidden) return;
+  if (willOpen) { paintPanel(); el.hidden = false; }
+  else { el.hidden = true; feed.markRead(); }
+  $("#bell").setAttribute("aria-expanded", String(willOpen));
+}
+$("#bell").onclick = () => togglePanel();
+$("#npanel").addEventListener("click", e => {
+  if (e.target.closest("#nSeen")) { feed.seenAll(); people.forEach(renderTickets); return; }
+  if (e.target.closest("#nClear")) { feed.clearLog(); paintPanel(); return; }
+  const a = e.target.closest("a.nev");
+  if (a && feed.seen(a.dataset.row, a.dataset.key)) { const p = people.find(x => x.accountId === a.dataset.row); if (p) renderTickets(p); }
+});
+document.addEventListener("mousedown", e => { if (!$("#npanel").hidden && !e.target.closest(".bellwrap")) togglePanel(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#npanel").hidden) togglePanel(false); });
 
 /* ---------- rendering ---------- */
 function hueOf(s){ let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
@@ -396,11 +561,13 @@ function renderTickets(p) {
   if (meta) {
     const prog = iss.filter(i => i.cat === "indeterminate").length;
     meta.textContent = `${iss.length}${t.more ? "+" : ""} ${isTeam(p) ? "unassigned" : showDone ? "tickets" : "open"}${doneN(iss) ? ` · ${doneN(iss)} done` : ""}${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP open` : ""}`;
+    const nf = iss.filter(i => feed.isFresh(p.accountId, i.key)).length;
+    if (nf) meta.insertAdjacentHTML("beforeend", ` · <span class="nnew">${nf} new</span>`);
   }
   if (collapsed.has(p.accountId)) {
     const prog = iss.filter(i => i.cat === "indeterminate").length;
     const keys = iss.slice(0, 6).map(i => esc(i.key)).join(", ");
-    cell.innerHTML = `<button class="colsum" type="button" data-act="toggle">${iss.length ? `${iss.length}${t.more ? "+" : ""} tickets${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP` : ""} <span class="colkeys">${keys}${iss.length > 6 ? "…" : ""}</span>` : "No tickets"} <span class="colhint">Show</span></button>`;
+    cell.innerHTML = `<button class="colsum" type="button" data-act="toggle">${iss.length ? `${iss.length}${t.more ? "+" : ""} tickets${prog ? ` · ${prog} in progress` : ""}${spSum(iss).n ? ` · ${fmtSp(spSum(iss).sum)} SP` : ""}${(() => { const nf = iss.filter(i => feed.isFresh(p.accountId, i.key)).length; return nf ? ` · <span class="nnew" style="color:var(--accent);font-weight:600">${nf} new</span>` : ""; })()} <span class="colkeys">${keys}${iss.length > 6 ? "…" : ""}</span>` : "No tickets"} <span class="colhint">Show</span></button>`;
     return;
   }
   const f = filters.get(p.accountId);
@@ -409,8 +576,8 @@ function renderTickets(p) {
   if (t.state === "err") h += `<div class="cell-err" style="margin-bottom:6px"><span>Showing earlier results. ${esc(t.err.msg)}</span><button class="btn" type="button" data-act="retry">Try again</button></div>`;
   if (!shown.length) h += `<div class="empty">No ${showDone ? "" : "open "}${isTeam(p) ? "unassigned tickets for this team" : "tickets assigned"} in ${f && f.size ? "the selected projects" : "these projects"}.</div>`;
   else h += `<div class="tickets">` + shown.map((i, n) =>
-      `<a class="t${n && projKey(i) !== projKey(shown[n-1]) ? " newproj" : ""}" style="--ph:${projHue(i.key.split("-")[0])}" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.type)} · ${esc(i.summary)}">
-        ${typeIcon(i)}<span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${esc(i.summary)}</span>${ageCell(i, p)}${spBadge(i)}</a>`).join("") + `</div>`;
+      `<a class="t${n && projKey(i) !== projKey(shown[n-1]) ? " newproj" : ""}${feed.isFresh(p.accountId, i.key) ? " fresh" : ""}" data-key="${esc(i.key)}" style="--ph:${projHue(i.key.split("-")[0])}" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.type)} · ${esc(i.summary)}">
+        ${typeIcon(i)}<span class="k">${esc(i.key)}</span><span class="pill ${esc(i.cat)}">${esc(i.status)}</span><span class="s">${feed.isFresh(p.accountId, i.key) ? `<span class="newtag">New</span>` : ""}${esc(i.summary)}</span>${ageCell(i, p)}${spBadge(i)}</a>`).join("") + `</div>`;
   if (t.more || (iss.length && t.url)) h += `<div class="tfoot"><span>${t.more ? `Showing the ${MAX} most recently updated.` : ""}</span>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">Open in Jira ↗</a>` : ""}</div>`;
   cell.innerHTML = h;
 }
@@ -484,6 +651,12 @@ if (TAURI) document.addEventListener("click", e => {
 
 /* ---------- events ---------- */
 $("#rows").addEventListener("click", async e => {
+  const link = e.target.closest("a.t.fresh");
+  if (link) {
+    const tr = link.closest("tr[data-id]"), p = tr && people.find(x => x.accountId === tr.dataset.id);
+    if (p && feed.seen(p.accountId, link.dataset.key)) setTimeout(() => renderTickets(p), 0);
+    return;
+  }
   const btn = e.target.closest("button"); if (!btn) return;
   if (btn.id === "addBtn") return openModal();
   const tr = btn.closest("tr[data-id]"); if (!tr) return;
@@ -503,7 +676,7 @@ $("#rows").addEventListener("click", async e => {
   else if (act === "retry") loadTickets(p);
   else if (act === "remove") {
     if (btn.dataset.confirm) {
-      try { await store.remove(p.accountId); delete tickets[p.accountId]; render(); } catch { btn.textContent = "Couldn't remove"; }
+      try { await store.remove(p.accountId); feed.reset(p.accountId); delete tickets[p.accountId]; render(); } catch { btn.textContent = "Couldn't remove"; }
     } else { btn.dataset.confirm = "1"; btn.textContent = "Click to confirm"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.confirm; btn.textContent = "Remove"; } }, 3500); }
   }
 });
@@ -629,7 +802,7 @@ function openModal(existing) {
                     ...(isTeam(st.person) ? { kind: "team", teamId: st.person.teamId } : {}),
                     avatarUrl: st.person.avatarUrl || "", projects: st.projects.map(x => ({key:x.key, name:x.name})),
                     addedAt: st.person.addedAt || Date.now() };
-        try { await store.save(p); rememberProjects(p.projects); close(); delete tickets[p.accountId]; render(); loadTickets(p); }
+        try { await store.save(p); rememberProjects(p.projects); close(); feed.reset(p.accountId); delete tickets[p.accountId]; render(); loadTickets(p); }
         catch (e) { btn.disabled = false; btn.textContent = "Couldn't save. Try again"; }
       };
       const inp = $("#pq"); inp.oninput = () => searchProjects(inp.value);
@@ -679,7 +852,7 @@ function openModal(existing) {
         // Teams always cover every project: add right away, no project step.
         const p = { accountId: u.accountId, kind: "team", teamId: u.teamId, displayName: u.displayName, projects: [], addedAt: Date.now() };
         b.disabled = true;
-        try { await store.save(p); close(); delete tickets[p.accountId]; render(); loadTickets(p); }
+        try { await store.save(p); close(); feed.reset(p.accountId); delete tickets[p.accountId]; render(); loadTickets(p); }
         catch { b.disabled = false; st.err = "Couldn't add the team. Try again."; paintResults(); }
       });
     } else {
@@ -702,7 +875,7 @@ function openModal(existing) {
 async function boot() {
   hideBanner();
   try { await store.init(); } catch (e) { render(); showBanner(e); return; }
-  render(); loadAll();
+  render(); paintBell(); loadAll();
 }
 boot();
 </script>

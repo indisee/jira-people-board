@@ -120,7 +120,7 @@ const server = http.createServer(async (req, res) => {
       const { jql, maxResults = 100, assignee } = await readBody(req);
       const r = await jira(`/rest/api/3/search/jql`, {
         method: "POST",
-        body: JSON.stringify({ jql, maxResults, fields: ["summary", "status", "issuetype", "priority", "project", "created", "updated", SP_FIELD] }),
+        body: JSON.stringify({ jql, maxResults, fields: ["summary", "status", "issuetype", "priority", "project", "created", "updated", "assignee", SP_FIELD] }),
       });
       const since = assignee ? await assignedSince((r.issues || []).map(n => n.id), assignee) : {};
       const params = new URLSearchParams({ jql });
@@ -135,6 +135,7 @@ const server = http.createServer(async (req, res) => {
             created: f.created || "", updated: f.updated || "",
             assignedAt: since[n.id] ? new Date(since[n.id]).toISOString() : (assignee ? (f.created || "") : ""),
             assignedFromHistory: !!since[n.id],
+            assignee: (f.assignee && f.assignee.displayName) || "",
             url: `${SITE}/browse/${n.key}`,
           };
         }),
