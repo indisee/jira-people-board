@@ -109,10 +109,18 @@ fn jira<'a>(s: &'a AppState) -> Result<&'a Jira, String> {
 fn enc(s: &str) -> String {
     utf8_percent_encode(s, NON_ALPHANUMERIC).to_string()
 }
-fn people_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn data_file(app: &tauri::AppHandle, name: &str) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("people.json"))
+    Ok(dir.join(name))
+}
+fn people_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    data_file(app, "people.json")
+}
+fn write_json(path: &PathBuf, v: &Value) -> Result<(), String> {
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(v).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 /* ---------- commands ---------- */
@@ -136,6 +144,39 @@ fn people_save(app: tauri::AppHandle, list: Value) -> Result<(), String> {
     fs::write(&tmp, serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// Daily notes: {"YYYY-MM-DD": {rowId: {done, doing, at}}}.
+#[tauri::command]
+fn notes_load(app: tauri::AppHandle) -> Result<Value, String> {
+    let path = data_file(&app, "notes.json")?;
+    Ok(fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({})))
+}
+
+/// Upsert one person's entry for one day; an entry with both fields empty is removed.
+#[tauri::command]
+fn notes_put(app: tauri::AppHandle, day: String, id: String, done: String, doing: String) -> Result<(), String> {
+    let path = data_file(&app, "notes.json")?;
+    let mut all: Value = fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}));
+    if !all.is_object() {
+        all = json!({});
+    }
+    let map = all.as_object_mut().unwrap();
+    let dayv = map.entry(day.clone()).or_insert_with(|| json!({}));
+    if !dayv.is_object() {
+        *dayv = json!({});
+    }
+    let d = dayv.as_object_mut().unwrap();
+    if done.trim().is_empty() && doing.trim().is_empty() {
+        d.remove(&id);
+    } else {
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis() as u64).unwrap_or(0);
+        d.insert(id, json!({ "done": done, "doing": doing, "at": at }));
+    }
+    if d.is_empty() {
+        map.remove(&day);
+    }
+    write_json(&path, &all)
 }
 
 #[tauri::command]
@@ -382,6 +423,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             people_load,
             people_save,
+            notes_load,
+            notes_put,
             users_search,
             projects_search,
             teams_search,

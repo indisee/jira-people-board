@@ -11,6 +11,7 @@ const ENV_FILE = process.env.JIRA_ENV_FILE || path.join(os.homedir(), ".release-
 const SP_FIELD = process.env.JIRA_SP_FIELD || "customfield_10XXX"; // story points
 const TEAM_CLAUSE = process.env.JIRA_TEAM_CLAUSE || "cf[10YYY]"; // Team field (customfield_10YYY)
 const DATA_FILE = path.join(__dirname, "people.json");
+const NOTES_FILE = path.join(__dirname, "notes.json"); // daily notes: {"YYYY-MM-DD": {rowId: {done, doing, at}}}
 const PAGE = path.join(__dirname, "public", "index.html");
 
 function readEnv(file) {
@@ -76,6 +77,7 @@ function readBody(req) {
     req.on("error", reject);
   });
 }
+const loadNotes = () => { try { const v = JSON.parse(fs.readFileSync(NOTES_FILE, "utf8")); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; } };
 const loadPeople = () => { try { return JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch { return []; } };
 
 // Only proxy avatar images from Atlassian / Gravatar hosts.
@@ -95,6 +97,19 @@ const server = http.createServer(async (req, res) => {
         const list = await readBody(req);
         if (!Array.isArray(list)) return send(res, 400, { message: "Expected a list" });
         fs.writeFileSync(DATA_FILE, JSON.stringify(list, null, 2));
+        return send(res, 200, { ok: true });
+      }
+    }
+    if (url.pathname === "/api/notes") {
+      if (req.method === "GET") return send(res, 200, loadNotes());
+      if (req.method === "PUT") {
+        const { day, id, done = "", doing = "" } = await readBody(req);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day || "") || !id) return send(res, 400, { message: "Expected day and id" });
+        const all = loadNotes(), d = all[day] || {};
+        if (!String(done).trim() && !String(doing).trim()) delete d[id];
+        else d[id] = { done: String(done), doing: String(doing), at: Date.now() };
+        if (Object.keys(d).length) all[day] = d; else delete all[day];
+        const tmp = NOTES_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(all, null, 2)); fs.renameSync(tmp, NOTES_FILE);
         return send(res, 200, { ok: true });
       }
     }

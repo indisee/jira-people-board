@@ -185,6 +185,27 @@ tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:c
   .t .pill{grid-column:3;grid-row:1}
   .t .s{grid-column:3;white-space:normal}
 }
+/* Daily notes: Done / Doing per person, Next, History, team day view */
+.daily{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.daily label{display:grid;gap:3px;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.daily textarea{font:inherit;font-size:.85rem;text-transform:none;letter-spacing:normal;font-weight:400;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;resize:none;min-height:38px;overflow:hidden;box-sizing:border-box;width:100%}
+.daily textarea:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
+.daily textarea::placeholder{color:var(--muted);opacity:.7}
+.dactions{display:flex;align-items:center;gap:6px}
+.dactions .dsaved{margin-left:auto;font-size:.75rem;color:var(--muted)}
+tr.collapsed .daily{display:none}
+tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.modal.wide{width:min(720px,100%)}
+.daynav{display:flex;align-items:center;gap:8px;margin-top:8px}
+.daynav select{flex:1}
+.hday{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:6px}
+.hday h3{margin:0;font-size:.85rem;font-family:var(--f-display);display:flex;align-items:center;gap:8px}
+.hday h3 .avatar{width:24px;height:24px;font-size:.65rem}
+.hrow{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;font-size:.88rem}
+.hrow b{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;padding-top:2px}
+.hrow span{white-space:pre-wrap;overflow-wrap:anywhere}
+.hrow span.none{color:var(--muted)}
+.hmissing{color:var(--muted);font-size:.85rem}
 /* Change feed: highlighted new tickets, bell + log panel */
 .t.fresh{box-shadow:inset 3px 0 0 var(--accent)}
 .newtag{display:inline-block;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-fg);background:var(--accent);border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px}
@@ -234,6 +255,7 @@ tr.collapsed .person{grid-template-columns:14px 28px minmax(0,1fr);align-items:c
         <button class="btn bell" id="bell" type="button" aria-haspopup="true" aria-expanded="false" title="What changed on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span>Changes</span><span class="badge" id="bellBadge" hidden></span></button>
         <div class="npanel" id="npanel" hidden></div>
       </span>
+      <button class="btn" id="dailyBtn" type="button" title="Everyone's Done / Doing notes for a day, ready to copy">Daily notes</button>
       <button class="btn" id="refresh" type="button">Refresh</button>
     </div>
   </header>
@@ -278,6 +300,7 @@ function tauriCall(path, opts) {
   const q = u.searchParams.get("q") || "";
   switch (u.pathname) {
     case "/api/people": return opts.method === "PUT" ? TAURI.invoke("people_save", { list: body }) : TAURI.invoke("people_load");
+    case "/api/notes": return opts.method === "PUT" ? TAURI.invoke("notes_put", { day: body.day, id: body.id, done: body.done || "", doing: body.doing || "" }) : TAURI.invoke("notes_load");
     case "/api/users": return TAURI.invoke("users_search", { q });
     case "/api/teams": return TAURI.invoke("teams_search", { q });
     case "/api/projects": return TAURI.invoke("projects_search", { q });
@@ -500,6 +523,136 @@ $("#npanel").addEventListener("click", e => {
 document.addEventListener("mousedown", e => { if (!$("#npanel").hidden && !e.target.closest(".bellwrap")) togglePanel(false); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#npanel").hidden) togglePanel(false); });
 
+/* ---------- daily notes ----------
+   One entry per person per day, kept in notes.json (next to people.json). The fields show today's
+   entry, so they start empty every morning; earlier days stay in History and the Daily notes view. */
+let notes = {};
+let currentId = null;                            // the person Next last moved to, marked with an accent edge                                  // {"YYYY-MM-DD": {rowId: {done, doing, at}}}
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+let today = dayKey();
+const noteOf = (id, day = today) => (notes[day] && notes[day][id]) || null;
+const fmtDay = k => { const [y,m,d] = k.split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString([], {weekday:"short", day:"numeric", month:"short", year:"numeric"}); };
+function dailyHTML(p) {
+  const n = noteOf(p.accountId) || {};
+  const next = nextPerson(p);
+  return `<div class="daily">
+    <label>Done<textarea data-note="done" rows="1" placeholder="What got done since last time">${esc(n.done || "")}</textarea></label>
+    <label>Doing<textarea data-note="doing" rows="1" placeholder="What's next today">${esc(n.doing || "")}</textarea></label>
+    <div class="dactions">
+      <button class="btn" type="button" data-act="next" title="${next ? `Collapse and go to ${esc(next.displayName)}` : "Collapse — this is the last person"} (⌘/Ctrl + Enter)">${next ? "Next ↓" : "Finish ✓"}</button>
+      <button class="btn ghost" type="button" data-act="history">History</button>
+      <span class="dsaved" aria-live="polite"></span>
+    </div></div>`;
+}
+const nextPerson = p => { const i = people.indexOf(p); return people.slice(i + 1).find(x => !isTeam(x)) || null; };
+function growAll(root = document) { root.querySelectorAll(".daily textarea").forEach(grow); }
+function grow(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; }
+const saveTimers = {};
+function queueSave(tr, p, now) {
+  const done = tr.querySelector('[data-note="done"]').value, doing = tr.querySelector('[data-note="doing"]').value;
+  const day = today, id = p.accountId;
+  // Keep the in-memory copy current at once, so a re-render never loses typing.
+  notes[day] = notes[day] || {};
+  if (!done.trim() && !doing.trim()) delete notes[day][id]; else notes[day][id] = { done, doing, at: Date.now() };
+  const flag = tr.querySelector(".dsaved");
+  clearTimeout(saveTimers[id]);
+  const run = async () => {
+    try { await api("/api/notes", { method: "PUT", body: JSON.stringify({ day, id, done, doing }) }); if (flag.isConnected) flag.textContent = "Saved"; }
+    catch (e) { if (flag.isConnected) flag.textContent = "Not saved: " + (e.msg || "error"); }
+  };
+  if (flag) flag.textContent = "…";
+  if (now) run(); else saveTimers[id] = setTimeout(run, 600);
+}
+function goNext(p) {
+  const nx = nextPerson(p);
+  collapsed.add(p.accountId);
+  if (nx) collapsed.delete(nx.accountId);
+  currentId = nx ? nx.accountId : null;
+  try { localStorage.setItem("jpd.collapsed", JSON.stringify([...collapsed])); } catch {}
+  render();
+  const tr = nx && rowsEl.querySelector(`tr[data-id="${CSS.escape(nx.accountId)}"]`);
+  if (!tr) return;
+  tr.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  const ta = tr.querySelector('[data-note="done"]'); if (ta) ta.focus({ preventScroll: true });
+}
+// The day turned over while the app was open: show fresh fields (unless someone is typing).
+setInterval(() => {
+  if (dayKey() === today) return;
+  if (document.activeElement && document.activeElement.matches(".daily textarea")) return;
+  today = dayKey(); render();
+}, 60 * 1000);
+
+// Small read-only dialog shared by History and Daily notes.
+function openSheet({ title, head = "", wide = false }) {
+  const root = $("#modalRoot");
+  root.innerHTML = `<div class="scrim" id="scrim"><div class="modal${wide ? " wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="mtitle">
+    <div class="mhead"><h2 id="mtitle">${esc(title)}</h2>${head}</div><div class="mbody" id="mbody"></div><div class="mfoot" id="mfoot"></div></div></div>`;
+  const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  $("#scrim").addEventListener("mousedown", e => { if (e.target.id === "scrim") close(); });
+  return { body: $("#mbody"), foot: $("#mfoot"), close };
+}
+const noteRows = n => `<div class="hrow"><b>Done</b><span class="${n.done.trim() ? "" : "none"}">${esc(n.done.trim() || "—")}</span></div>
+  <div class="hrow"><b>Doing</b><span class="${n.doing.trim() ? "" : "none"}">${esc(n.doing.trim() || "—")}</span></div>`;
+function openHistory(p) {
+  const days = Object.keys(notes).filter(d => notes[d][p.accountId]).sort().reverse();
+  const sh = openSheet({ title: `${p.displayName} · history` });
+  sh.body.innerHTML = days.length
+    ? days.map(d => `<div class="hday"><h3>${esc(fmtDay(d))}${d === today ? ` <span class="stamp">today</span>` : ""}</h3>${noteRows(notes[d][p.accountId])}</div>`).join("")
+    : `<div class="empty">No notes for ${esc(p.displayName)} yet.</div>`;
+  sh.foot.innerHTML = `<button class="btn" type="button" id="shClose">Close</button>`;
+  $("#shClose").onclick = sh.close;
+}
+function indent(t) { return t.trim().split(/\r?\n/).join("\n    "); }
+function dayText(day) {
+  const ppl = people.filter(p => !isTeam(p)), d = notes[day] || {};
+  const lines = [`Daily — ${fmtDay(day)}`, ""];
+  for (const p of ppl) {
+    const n = d[p.accountId]; if (!n) continue;
+    lines.push(p.displayName);
+    if (n.done.trim()) lines.push("  Done: " + indent(n.done));
+    if (n.doing.trim()) lines.push("  Doing: " + indent(n.doing));
+    lines.push("");
+  }
+  const missing = ppl.filter(p => !d[p.accountId]).map(p => p.displayName);
+  if (missing.length) lines.push("No notes: " + missing.join(", "));
+  return lines.join("\n").trim() + "\n";
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch {}
+  const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  ta.remove(); return ok;
+}
+function openDaily(day = today) {
+  const days = [...new Set([today, ...Object.keys(notes)])].sort().reverse();
+  const sh = openSheet({ title: "Daily notes", wide: true, head: `<div class="daynav">
+      <button class="btn" type="button" id="dPrev" title="Earlier day" aria-label="Earlier day">‹</button>
+      <select id="dSel" aria-label="Day">${days.map(d => `<option value="${d}"${d === day ? " selected" : ""}>${esc(fmtDay(d))}${d === today ? " (today)" : ""}${notes[d] ? ` · ${Object.keys(notes[d]).length}` : ""}</option>`).join("")}</select>
+      <button class="btn" type="button" id="dNext" title="Later day" aria-label="Later day">›</button></div>` });
+  const paint = () => {
+    const d = notes[day] || {}, ppl = people.filter(p => !isTeam(p));
+    const withN = ppl.filter(p => d[p.accountId]), missing = ppl.filter(p => !d[p.accountId]);
+    sh.body.innerHTML = (withN.length ? withN.map(p => `<div class="hday"><h3>${avatarHTML(p)}${esc(p.displayName)}</h3>${noteRows(d[p.accountId])}</div>`).join("")
+        : `<div class="empty">No notes for this day.</div>`)
+      + (missing.length && withN.length ? `<div class="hmissing">No notes: ${missing.map(p => esc(p.displayName)).join(", ")}</div>` : "");
+    $("#dSel").value = day;
+    const i = days.indexOf(day);
+    $("#dPrev").disabled = i >= days.length - 1; $("#dNext").disabled = i <= 0;
+    sh.foot.innerHTML = `<span class="stamp" id="dCopied" style="margin-right:auto;align-self:center" aria-live="polite"></span>
+      <button class="btn" type="button" id="shClose">Close</button><button class="btn primary" type="button" id="dCopy"${withN.length ? "" : " disabled"}>Copy</button>`;
+    $("#shClose").onclick = sh.close;
+    $("#dCopy").onclick = async () => { $("#dCopied").textContent = (await copyText(dayText(day))) ? "Copied to clipboard" : "Couldn't copy"; };
+  };
+  $("#dSel").onchange = e => { day = e.target.value; paint(); };
+  $("#dPrev").onclick = () => { day = days[days.indexOf(day) + 1] || day; paint(); };
+  $("#dNext").onclick = () => { day = days[days.indexOf(day) - 1] || day; paint(); };
+  paint();
+}
+$("#dailyBtn").onclick = () => openDaily();
+
 /* ---------- rendering ---------- */
 function hueOf(s){ let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
 function avatarHTML(p, cls="") {
@@ -514,7 +667,7 @@ function render() {
   for (const p of people) {
     const id = esc(domId(p.accountId));
     const isCol = collapsed.has(p.accountId);
-    html += `<tr data-id="${esc(p.accountId)}" class="${isCol ? "collapsed" : ""}">
+    html += `<tr data-id="${esc(p.accountId)}" class="${isCol ? "collapsed" : ""}${p.accountId === currentId ? " current" : ""}">
       <td><div class="person"><button class="grip" type="button" data-act="grip" title="Drag to reorder, or focus and press ↑ / ↓" aria-label="Reorder ${esc(p.displayName)}">⋮⋮</button>${avatarHTML(p)}<div style="min-width:0">
         <button class="pname ptoggle" type="button" data-act="toggle" aria-expanded="${!isCol}" title="${isCol ? "Expand" : "Collapse"}"><span class="chev" aria-hidden="true">▾</span>${esc(p.displayName)}</button>
         ${isTeam(p) ? `<div class="pmail">Team · unassigned tickets</div>` : p.email ? `<div class="pmail">${esc(p.email)}</div>` : ""}
@@ -523,12 +676,13 @@ function render() {
         <div class="pactions">
           ${isTeam(p) ? "" : `<button class="btn ghost" type="button" data-act="edit">Edit projects</button>`}
           <button class="btn ghost danger" type="button" data-act="remove">Remove</button>
-        </div></div></div></td>
+        </div></div></div>${isTeam(p) ? "" : dailyHTML(p)}</td>
       <td id="tk-${id}"></td></tr>`;
   }
   html += `<tr class="addrow"><td colspan="2"><button class="addbtn" type="button" id="addBtn"><span class="plus">+</span> Add person or team</button></td></tr>`;
   $("#rows").innerHTML = html;
   people.forEach(p => { paintChips(p); renderTickets(p); });
+  growAll($("#rows"));
   const n = people.length;
   $("#sub").textContent = n ? `${n} ${n===1?"person":"people"} · ${showDone ? `open + done in last ${donePeriod} days` : "open tickets"}, sorted by key.` : "Tickets assigned to the people you follow, across the projects you pick.";
 }
@@ -672,6 +826,8 @@ $("#rows").addEventListener("click", async e => {
     if (f.has(k)) f.delete(k); else f.add(k);
     filters.set(p.accountId, f); renderTickets(p); return;
   }
+  if (act === "next") { const tr2 = btn.closest("tr"); queueSave(tr2, p, true); goNext(p); return; }
+  if (act === "history") return openHistory(p);
   if (act === "edit") openModal(p);
   else if (act === "retry") loadTickets(p);
   else if (act === "remove") {
@@ -679,6 +835,18 @@ $("#rows").addEventListener("click", async e => {
       try { await store.remove(p.accountId); feed.reset(p.accountId); delete tickets[p.accountId]; render(); } catch { btn.textContent = "Couldn't remove"; }
     } else { btn.dataset.confirm = "1"; btn.textContent = "Click to confirm"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.confirm; btn.textContent = "Remove"; } }, 3500); }
   }
+});
+$("#rows").addEventListener("input", e => {
+  const t = e.target.closest(".daily textarea"); if (!t) return;
+  grow(t);
+  const tr = t.closest("tr[data-id]"), p = people.find(x => x.accountId === tr.dataset.id);
+  if (p) queueSave(tr, p);
+});
+$("#rows").addEventListener("keydown", e => {
+  const t = e.target.closest(".daily textarea"); if (!t || e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault();
+  const tr = t.closest("tr[data-id]"), p = people.find(x => x.accountId === tr.dataset.id);
+  if (p) { queueSave(tr, p, true); goNext(p); }
 });
 $("#refresh").onclick = () => loadAll();
 function setAllCollapsed(on) {
@@ -875,6 +1043,7 @@ function openModal(existing) {
 async function boot() {
   hideBanner();
   try { await store.init(); } catch (e) { render(); showBanner(e); return; }
+  try { notes = await api("/api/notes"); } catch { notes = {}; }
   render(); paintBell(); loadAll();
 }
 boot();
