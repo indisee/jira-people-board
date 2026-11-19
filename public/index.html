@@ -32,6 +32,11 @@ body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14
 header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
 h1{font-family:var(--f-display);font-weight:600;font-size:1.6rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
 .sub{color:var(--muted);margin:2px 0 0;font-size:.9rem}
+.htitle{flex:1 1 320px;min-width:0;display:grid;gap:4px}
+.memo{font:inherit;font-size:.9rem;color:var(--fg);background:transparent;border:1px solid transparent;border-radius:6px;padding:4px 8px;margin-left:-8px;resize:none;overflow:hidden;box-sizing:border-box;width:100%;max-width:640px;min-height:28px;line-height:1.45}
+.memo:hover{border-color:var(--line)}
+.memo:focus{border-color:var(--accent);outline:none;background:var(--surface);box-shadow:0 0 0 2px var(--accent-soft)}
+.memo::placeholder{color:var(--muted);opacity:.7}
 .tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 button{font:inherit;cursor:pointer}
 .btn{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:6px;padding:6px 12px;font-weight:500}
@@ -275,9 +280,9 @@ tr.current > td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 
 <div class="wrap">
   <header>
-    <div>
+    <div class="htitle">
       <h1>Jira People Board</h1>
-      <p class="sub" id="sub">Tickets assigned to the people you follow, across the projects you pick.</p>
+      <textarea class="memo" id="memo" rows="1" aria-label="Notes" placeholder="Notes — Enter adds a bullet, Shift+Enter a plain line"></textarea>
     </div>
     <div class="tools">
       <label class="toggle" for="donePeriod">Done tickets <select id="donePeriod"><option value="0">Hide</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select></label>
@@ -790,8 +795,6 @@ function render() {
   $("#rows").innerHTML = html;
   people.forEach(p => { paintChips(p); renderTickets(p); });
   growAll($("#rows"));
-  const n = people.length;
-  $("#sub").textContent = n ? `${n} ${n===1?"person":"people"} · ${showDone ? `open + done in last ${donePeriod} days` : "open tickets"}, sorted by key.` : "Tickets assigned to the people you follow, across the projects you pick.";
 }
 // Project chips under the avatar: same tint as the ticket rows, click to filter this person's list.
 const filters = new Map();   // accountId -> Set of project keys shown (empty = all)
@@ -1160,6 +1163,38 @@ function openModal(existing) {
 new ResizeObserver(([e]) => document.documentElement.style.setProperty("--hh", Math.round(e.target.getBoundingClientRect().height) + "px")).observe($("header"));
 
 /* ---------- boot ---------- */
+// Header notes: free text under the title, grows with its content, Enter continues a "• " list.
+(() => {
+  const m = $("#memo"); if (!m) return;
+  const KEY = "jpd.memo", B = "• ";
+  const fit = () => { m.style.height = "auto"; m.style.height = m.scrollHeight + 2 + "px"; };
+  try { m.value = localStorage.getItem(KEY) || ""; } catch {}
+  let t; const save = () => { clearTimeout(t); t = setTimeout(() => { try { localStorage.setItem(KEY, m.value); } catch {} }, 300); };
+  // execCommand keeps the native undo stack; fall back to setRangeText where it is missing.
+  const put = (text, from, to) => {
+    m.setSelectionRange(from, to);
+    const ok = from === to && !text ? true : document.execCommand(text ? "insertText" : "delete", false, text);
+    if (!ok) m.setRangeText(text, from, to, "end");
+  };
+  m.addEventListener("input", () => { fit(); save(); });
+  m.addEventListener("keydown", e => {
+    if (e.key !== "Enter" || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+    e.preventDefault();
+    const v = m.value, a = m.selectionStart, z = m.selectionEnd;
+    const ls = v.lastIndexOf("\n", a - 1) + 1, line = v.slice(ls, a);
+    if (line === B && a === z) put("", ls, a);           // Enter on an empty bullet ends the list
+    else {
+      put("\n" + B, a, z);
+      if (line.trim() && !line.startsWith(B)) {            // the line just finished had no bullet: give it one
+        const at = m.selectionStart; put(B, ls, ls); m.setSelectionRange(at + B.length, at + B.length);
+      }
+    }
+    fit(); save();
+  });
+  addEventListener("resize", fit);
+  requestAnimationFrame(fit);
+})();
+
 async function boot() {
   hideBanner();
   try { config = await api("/api/config"); } catch {}
