@@ -4,6 +4,8 @@
 //! talks to Jira REST, keeps the people list in the app data folder, and serves avatars
 //! through the `avatar://` protocol so the token never reaches the web page.
 
+mod brief;
+
 use base64::Engine;
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use serde_json::{json, Value};
@@ -239,14 +241,20 @@ fn config_view(app: &tauri::AppHandle, state: &AppState) -> Value {
             "effective": { "envFile": j.env_path.display().to_string(), "site": j.site, "spField": j.sp_field,
                            "teamField": j.team_field, "teamClause": j.team_clause },
             "defaults": { "envFile": default_env_path(home).display().to_string(), "site": DEFAULT_SITE,
-                          "spField": DEFAULT_SP_FIELD, "teamField": DEFAULT_TEAM_FIELD },
+                          "spField": DEFAULT_SP_FIELD, "teamField": DEFAULT_TEAM_FIELD,
+                          "briefModel": brief::DEFAULT_MODEL, "briefLanguage": brief::DEFAULT_LANGUAGE,
+                          "claudePath": brief::find_claude("", home).unwrap_or_default(),
+                          "briefPrompt": brief::DEFAULT_PROMPT },
             "error": Value::Null, "zoom": j.zoom.is_some(),
         }),
         Err(e) => json!({
             "settings": saved,
             "effective": { "teamClause": jql_clause(&setting(&saved, "teamField").unwrap_or_else(|| DEFAULT_TEAM_FIELD.into())) },
             "defaults": { "envFile": default_env_path(home).display().to_string(), "site": DEFAULT_SITE,
-                          "spField": DEFAULT_SP_FIELD, "teamField": DEFAULT_TEAM_FIELD },
+                          "spField": DEFAULT_SP_FIELD, "teamField": DEFAULT_TEAM_FIELD,
+                          "briefModel": brief::DEFAULT_MODEL, "briefLanguage": brief::DEFAULT_LANGUAGE,
+                          "claudePath": brief::find_claude("", home).unwrap_or_default(),
+                          "briefPrompt": brief::DEFAULT_PROMPT },
             "error": e.trim_start_matches("CONFIG:"), "zoom": false,
         }),
     }
@@ -294,7 +302,7 @@ fn show_settings(app: &tauri::AppHandle) {
     }
     let mut b = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html?view=settings".into()))
         .title("Settings")
-        .inner_size(600.0, 720.0)
+        .inner_size(600.0, 780.0)
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -429,6 +437,29 @@ async fn zoom_send(state: State<'_, AppState>, full: Value, text: String) -> Res
     let status = r.status();
     let body = r.text().await.unwrap_or_default();
     Err(format!("Zoom returned {status}: {}", body.chars().take(200).collect::<String>()))
+}
+
+/// Ticket brief via `claude -p` (see brief.rs). Settings: briefModel, briefLanguage, claudePath.
+#[tauri::command]
+async fn ticket_brief(app: tauri::AppHandle, state: State<'_, AppState>, key: String, force: Option<bool>) -> Result<Value, String> {
+    let j = jira(&state)?;
+    let s = settings_read(&app);
+    let opts = brief::Options {
+        model: setting(&s, "briefModel").unwrap_or_else(|| brief::DEFAULT_MODEL.into()),
+        language: setting(&s, "briefLanguage").unwrap_or_else(|| brief::DEFAULT_LANGUAGE.into()),
+        claude_path: setting(&s, "claudePath").unwrap_or_default(),
+        prompt: setting(&s, "briefPrompt").unwrap_or_default(),
+        cache_file: data_file(&app, "briefs.json")?,
+        work_dir: app.path().app_data_dir().map_err(|e| e.to_string())?.join("brief-work"),
+        force: force.unwrap_or(false),
+    };
+    let conn = brief::Conn { client: &j.client, site: &j.site, auth: &j.auth, sp_field: &j.sp_field };
+    brief::brief(&conn, &key, opts, &state.home).await
+}
+
+#[tauri::command]
+fn brief_cache(app: tauri::AppHandle) -> Result<Value, String> {
+    Ok(brief::cached(&data_file(&app, "briefs.json")?))
 }
 
 #[tauri::command]
@@ -690,6 +721,8 @@ pub fn run() {
             notes_load,
             notes_put,
             zoom_send,
+            ticket_brief,
+            brief_cache,
             config_get,
             config_save,
             config_check,

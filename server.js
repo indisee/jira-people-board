@@ -16,6 +16,7 @@ const SETTINGS_FILE = path.join(__dirname, "settings.json"); // what the Setting
 const DATA_FILE = path.join(__dirname, "people.json");
 const NOTES_FILE = path.join(__dirname, "notes.json"); // daily notes: {"YYYY-MM-DD": {rowId: {done, doing, at}}}
 const PAGE = path.join(__dirname, "public", "index.html");
+const { createBrief, findClaude, DEFAULTS: BRIEF_DEFAULTS } = require("./brief/server");
 
 function readEnv(file) {
   const out = {};
@@ -55,7 +56,7 @@ configure();
 const configView = () => ({
   settings: cfg.settings, error: cfg.error, zoom: !!(cfg.ZOOM_URL && cfg.ZOOM_TOKEN),
   effective: { envFile: cfg.ENV_FILE, site: cfg.SITE, spField: cfg.SP_FIELD, teamField: cfg.TEAM_FIELD, teamClause: cfg.TEAM_CLAUSE },
-  defaults: DEFAULTS,
+  defaults: { ...DEFAULTS, ...BRIEF_DEFAULTS, claudePath: findClaude("") || "" },
 });
 
 async function jira(pathAndQuery, init = {}) {
@@ -72,6 +73,12 @@ async function jira(pathAndQuery, init = {}) {
   }
   return body;
 }
+
+// Ticket brief (claude -p): its own module, given Jira access and the current settings.
+const briefs = createBrief({
+  jira, cacheFile: path.join(__dirname, "briefs.json"),
+  settings: () => ({ ...cfg.settings, spField: cfg.SP_FIELD }),
+});
 
 // When each issue was last assigned to `accountId`, from the bulk changelog (epoch ms by issue id).
 // Issues with no assignee change were assigned at creation; the caller falls back to `created`.
@@ -122,6 +129,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       return res.end(fs.readFileSync(PAGE));
+    }
+    if (req.method === "GET" && url.pathname === "/brief.js") {
+      res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(fs.readFileSync(path.join(__dirname, "public", "brief.js")));
+    }
+    if (req.method === "GET" && url.pathname === "/api/brief/cache") return send(res, 200, briefs.cached());
+    if (req.method === "GET" && url.pathname === "/api/brief") {
+      return send(res, 200, await briefs.brief(url.searchParams.get("key"), { force: url.searchParams.get("force") === "1" }));
     }
     if (url.pathname === "/api/people") {
       if (req.method === "GET") return send(res, 200, loadPeople());
@@ -237,7 +252,7 @@ const server = http.createServer(async (req, res) => {
     }
     send(res, 404, { message: "Not found" });
   } catch (e) {
-    send(res, e.status === 401 || e.status === 403 ? e.status : 502, { message: e.message || "Request to Jira failed" });
+    send(res, e.status === 401 || e.status === 403 || e.status === 400 ? e.status : 502, { message: e.message || "Request to Jira failed" });
   }
 });
 
