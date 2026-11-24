@@ -127,13 +127,16 @@ export async function settingsWindow() {
     } catch (e) { o.innerHTML = bad(e.msg); }
   };
   $("#setSave").onclick = async () => {
+    const b = $("#setSave");
+    if (b.disabled) return;
+    b.disabled = true;
     msg.textContent = "Saving…";
     try {
       const next = await call("config_save", { settings: collect() });
       S.config = next;
       if (next.error) { msg.innerHTML = bad(next.error); return; }
       closeWindow();
-    } catch (e) { msg.innerHTML = bad("Not saved: " + e.msg); }
+    } catch (e) { msg.innerHTML = bad("Not saved: " + e.msg); } finally { b.disabled = false; }
   };
   const first = $("#setForm input");
   if (first) first.focus();

@@ -119,7 +119,12 @@ pub fn notes_put(app: tauri::AppHandle, day: String, id: String, done: String, d
 pub fn memo_load(app: tauri::AppHandle) -> Result<Option<String>> {
     let path = data_file(&app, "memo.txt")?;
     // None (not "") when there is no file yet, so the page can bring over a memo kept by an older version.
-    Ok(fs::read_to_string(path).ok())
+    // Any other read error is an error: the page must not take an unreadable memo for a missing one and overwrite it.
+    match fs::read_to_string(&path) {
+        Ok(t) => Ok(Some(t)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(AppError::Other(format!("Couldn't read {}: {e}", path.display()))),
+    }
 }
 
 #[tauri::command]

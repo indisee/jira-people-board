@@ -162,8 +162,12 @@ pub async fn config_save(app: tauri::AppHandle, state: State<'_, AppState>, sett
     if let Some(site) = setting(&settings, "site") {
         check_site(&site)?;
     }
-    storage::write_json(&storage::data_file(&app, "settings.json")?, &settings)?;
-    state.reconnect(&settings);
+    {
+        // One save at a time: two writers would share settings.json.tmp, and the last write must match the connection.
+        let _g = storage::WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        storage::write_json(&storage::data_file(&app, "settings.json")?, &settings)?;
+        state.reconnect(&settings);
+    }
     let v = view(&app, &state);
     // Tell the board window to pick up the new settings.
     let _ = app.emit("config-changed", &v);

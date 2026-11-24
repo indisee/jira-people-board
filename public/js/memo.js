@@ -12,7 +12,15 @@ export async function initMemo() {
   const fit = () => { m.style.height = "auto"; m.style.height = m.scrollHeight + 2 + "px"; };
 
   let text = null;
-  try { text = await call("memo_load"); } catch { /* shown empty; typing still tries to save */ }
+  try {
+    text = await call("memo_load");
+  } catch (e) {
+    // The file is there but can't be read: leave it alone rather than save over it.
+    m.readOnly = true;
+    m.placeholder = "Notes couldn't be loaded";
+    m.title = "Notes couldn't be loaded, so editing is off: " + e.msg;
+    return;
+  }
   if (text == null) {
     // First run with the file: bring over the memo an older version kept in the browser storage.
     text = local.raw(OLD_KEY) || "";

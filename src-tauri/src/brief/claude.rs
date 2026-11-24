@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::{
     path::Path,
     process::Stdio,
-    sync::OnceLock,
+    sync::Mutex,
     time::Duration,
 };
 use tokio::{io::AsyncWriteExt, process::Command};
@@ -18,8 +18,15 @@ pub fn find(custom: &str, home: &Path) -> Option<String> {
     if !c.is_empty() {
         return Some(c.strip_prefix("~/").map(|r| home.join(r).to_string_lossy().into_owned()).unwrap_or_else(|| c.to_string()));
     }
-    static AUTO: OnceLock<Option<String>> = OnceLock::new();
-    AUTO.get_or_init(|| detect(home)).clone()
+    // Only a path that was found and still exists is reused; "not found" is asked again next time,
+    // so installing or moving claude works without restarting the app.
+    static AUTO: Mutex<Option<String>> = Mutex::new(None);
+    let mut found = AUTO.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(p) = found.as_deref().filter(|p| Path::new(p).is_file()) {
+        return Some(p.to_string());
+    }
+    *found = detect(home);
+    found.clone()
 }
 
 /// GUI apps don't get the login PATH: check the usual install spots, then ask the login shell (slow, so cached).

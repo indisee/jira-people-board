@@ -68,21 +68,28 @@ pub async fn brief(j: &Jira, key: &str, o: Options, cache_file: &Path, work_dir:
     if !valid_key(&key) {
         return Err(AppError::Other("Not a ticket key".into()));
     }
+    let system = if o.prompt.trim().is_empty() { DEFAULT_PROMPT } else { o.prompt.as_str() }.replace("{{LANGUAGE}}", &o.language);
+    let pid = prompt_id(&system);
     let asked_at = crate::time::now_iso();
     let lock = key_lock(&key);
-    let _turn = lock.lock().await;
-    // Someone else answered this ticket while we waited: that answer is as fresh as ours would be.
-    let hit = cached(cache_file)[&key].clone();
-    if hit["at"].as_str().is_some_and(|at| at >= asked_at.as_str()) {
-        return Ok(with_cached(hit, true));
+    let (_turn, waited) = match lock.try_lock() {
+        Ok(g) => (g, false),
+        Err(_) => (lock.lock().await, true),
+    };
+    // We waited for another request for this ticket: its answer is as fresh as ours would be, if it was made with
+    // the same settings. Never for a forced redo, and never without waiting (an old answer in the same second).
+    if waited && !o.force {
+        let hit = cached(cache_file)[&key].clone();
+        let same = hit["model"] == o.model.as_str() && hit["language"] == o.language.as_str() && hit["prompt"] == pid;
+        if same && hit["at"].as_str().is_some_and(|at| at >= asked_at.as_str()) {
+            return Ok(with_cached(hit, true));
+        }
     }
 
     let (issue, input) = text::collect(j, &key).await?;
     let f = &issue["fields"];
     let ikey = issue["key"].as_str().unwrap_or(&key).to_string();
     let updated = f["updated"].as_str().unwrap_or("").to_string();
-    let system = if o.prompt.trim().is_empty() { DEFAULT_PROMPT } else { o.prompt.as_str() }.replace("{{LANGUAGE}}", &o.language);
-    let pid = prompt_id(&system);
     let hit = cached(cache_file)[&ikey].clone();
     if !o.force && is_fresh(&hit, &updated, &o, &pid) {
         return Ok(with_cached(hit, true));
