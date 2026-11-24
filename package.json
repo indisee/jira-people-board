@@ -2,6 +2,7 @@
   "name": "jira-people-board",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev --config src-tauri/tauri.dev.conf.json",

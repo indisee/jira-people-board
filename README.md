@@ -42,9 +42,9 @@ It runs `claude -p` through Claude Code with your Claude subscription, so no API
 > [!WARNING]
 > **macOS only.** It's a Tauri app and may build elsewhere, but it has only ever been built and used on macOS.
 
-You need a Jira Cloud account with an [API token](https://id.atlassian.com/manage-profile/security/api-tokens). For ticket briefs you also need [Claude Code](https://docs.claude.com/en/docs/claude-code), installed and signed in.
+You need a Jira Cloud account with an [API token](https://id.atlassian.com/manage-profile/security/api-tokens). For ticket briefs you also need [Claude Code](https://code.claude.com/docs/en/overview), installed and signed in.
 
-To build from source you also need Node.js and [Rust](https://tauri.app/start/prerequisites/).
+To build from source you also need [Node.js](https://nodejs.org/), [Rust](https://www.rust-lang.org/tools/install) and the Xcode Command Line Tools (see the [Tauri prerequisites](https://tauri.app/start/prerequisites/)).
 
 ```bash
 npm install
@@ -75,3 +75,7 @@ Then set your Jira site and the story points / team field ids, and press **Check
 - `scripts/migrate-dev-to-prod.sh`: copies the Dev build's people, notes, settings and briefs into the installed app (`--dry-run` first). Quit both apps before running it.
 
 Code: `src-tauri/src` is the backend (Jira, storage, briefs, Zoom), and `public/` is the page (plain ES modules, no build step).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
