@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Demo: the real page (public/index.html and its modules) on a fake backend (mock.js) with made-up data.
+     npm run demo, then open http://127.0.0.1:4318/demo/
+     ?view=settings shows the Settings window; ?shot=brief|changes|daily sets the page up for a screenshot. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jira People Board — demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<link rel="stylesheet" href="../public/css/app.css">
+<link rel="stylesheet" href="../public/css/brief.css">
+<script src="mock.js"></script>
+<script type="module">
+  // The app's own markup, so the demo never drifts from it.
+  const page = await (await fetch("../public/index.html")).text();
+  document.body.innerHTML = new DOMParser().parseFromString(page, "text/html").body.innerHTML;
+  await import("../public/js/main.js");
+  window.__demoReady && window.__demoReady();
+</script>
+</head>
+<body></body>
+</html>

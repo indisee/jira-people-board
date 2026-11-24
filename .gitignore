@@ -3,11 +3,11 @@ node_modules/
 src-tauri/target/
 src-tauri/gen/schemas/
 
-# local data: people list used by `node server.js`
-people.json
-
 # OS / editor
 .DS_Store
+
+# data files of the old `node server.js` version (the app keeps its data in the app data folder)
+people.json
 notes.json
 settings.json
 briefs.json

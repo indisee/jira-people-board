@@ -20,6 +20,7 @@ Answer with ONE JSON object and nothing else: no prose and no code fence. Use th
 
 Rules:
 - Use only what is in the input. Don't invent requirements.
+- "…[SHORTENED BY THE BOARD]" marks text this tool cut to save space. It is complete in Jira. Never report it as truncated, incomplete or missing, and don't flag something as missing when it may be in the shortened part.
 - Comments are newer than the description. When they change the scope, follow the comments.
 - A link of type "is blocked by" or "depends on" to a ticket that isn't Done is a gap.
 - These are NOT gaps and don't lower "ready" on their own: no formal acceptance criteria section, no story points or estimate, no test plan, no assignee, no sprint, a short description when the goal is still clear, and minor wording or edge cases a developer can settle while building.

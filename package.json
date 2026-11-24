@@ -7,7 +7,11 @@
     "dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "build": "tauri build",
     "build:dev": "tauri build --debug --config src-tauri/tauri.dev.conf.json",
-    "serve": "node server.js"
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml --lib",
+    "lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && node --check public/js/*.js",
+    "demo": "echo 'Demo: http://127.0.0.1:4318/demo/' && python3 -m http.server 4318 --bind 127.0.0.1",
+    "screenshots": "scripts/screenshots.sh",
+    "install:mac": "tauri build && pkill -f 'Jira People Board.app/Contents/MacOS'; ditto 'src-tauri/target/release/bundle/macos/Jira People Board.app' '/Applications/Jira People Board.app' && open -a '/Applications/Jira People Board.app'"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.9.6"
