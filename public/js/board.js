@@ -16,8 +16,10 @@ const showDone = () => S.donePeriod > 0;
 
 const quote = s => String(s).replace(/"/g, "");
 function jqlFor(p) {
+  const teamClause = S.config.effective.teamClause;
+  if (isTeam(p) && !teamClause) throw { kind: "config", settings: true, msg: "Set the Team field in Settings to show this team's tickets." };
   const parts = isTeam(p)
-    ? [`${S.config.effective.teamClause || "cf[10YYY]"} = "${quote(p.teamId)}"`, "assignee is EMPTY"]
+    ? [`${teamClause} = "${quote(p.teamId)}"`, "assignee is EMPTY"]
     : [`assignee = "${quote(p.accountId)}"`];
   if (!isTeam(p) && p.projects && p.projects.length) {
     parts.push(`project in (${p.projects.map(x => `"${quote(x.key)}"`).join(", ")})`);

@@ -242,7 +242,7 @@ pub async fn collect(j: &Jira, key: &str) -> Result<(Value, String)> {
     let by_key: HashMap<&str, &Value> = linked.iter().filter_map(|i| i["key"].as_str().map(|k| (k, i))).collect();
 
     let mut out: Vec<String> = vec![format!("# {}: {}", ikey, str_of(&f["summary"], ""))];
-    let sp = match &f[&j.sp_field] {
+    let sp = match if j.sp_field.is_empty() { &Value::Null } else { &f[&j.sp_field] } {
         Value::Number(n) => n.to_string(),
         _ => String::new(),
     };

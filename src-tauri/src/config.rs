@@ -1,5 +1,6 @@
 //! Settings (settings.json in the app data folder) and the credentials file they point to.
-//! Precedence for every value: Settings > environment variable > credentials file > built-in default.
+//! Precedence for every value: Settings > environment variable > credentials file. The Jira site and the custom
+//! field ids have no built-in defaults: they differ per Jira site.
 
 use crate::{
     brief,
@@ -15,9 +16,6 @@ use std::{
 };
 use tauri::{Emitter, State};
 
-pub const DEFAULT_SITE: &str = "https://your-site.atlassian.net";
-pub const DEFAULT_SP_FIELD: &str = "customfield_10XXX"; // story points
-pub const DEFAULT_TEAM_FIELD: &str = "customfield_10YYY"; // Team
 
 /// Everything the credentials file and Settings give us.
 pub struct Connection {
@@ -99,20 +97,20 @@ pub fn load(home: &Path, settings: &Value) -> Result<Connection> {
             .ok_or_else(|| AppError::Config(format!("{k} is missing in {}", env_path.display())))
     };
     let (email, token) = (need("ATLASSIAN_EMAIL")?, need("ATLASSIAN_API_TOKEN")?);
-    let pick = |sk: &str, k: &str, d: &str| {
+    // Empty when set nowhere.
+    let pick = |sk: &str, k: &str| {
         setting(settings, sk)
-            .or_else(|| std::env::var(k).ok())
-            .or_else(|| env.get(k).cloned())
-            .unwrap_or_else(|| d.to_string())
+            .or_else(|| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()))
+            .or_else(|| env.get(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty()))
+            .unwrap_or_default()
     };
-    let site = check_site(&pick("site", "JIRA_SITE", DEFAULT_SITE))?;
-    let jira = Jira::new(
-        site,
-        &email,
-        &token,
-        pick("spField", "JIRA_SP_FIELD", DEFAULT_SP_FIELD),
-        pick("teamField", "JIRA_TEAM_FIELD", DEFAULT_TEAM_FIELD),
-    )?;
+    let site = pick("site", "JIRA_SITE");
+    if site.is_empty() {
+        return Err(AppError::Config("The Jira site is not set (https://your-site.atlassian.net)".into()));
+    }
+    let site = check_site(&site)?;
+    // Optional: without them the board shows no story points and can't list team tickets.
+    let jira = Jira::new(site, &email, &token, pick("spField", "JIRA_SP_FIELD"), pick("teamField", "JIRA_TEAM_FIELD"))?;
     let zoom = match (env.get("ZOOM_WEBHOOK_URL"), env.get("ZOOM_WEBHOOK_TOKEN")) {
         (Some(u), Some(t)) if !u.is_empty() && !t.is_empty() => Some((u.clone(), t.clone())),
         _ => None,
@@ -125,8 +123,7 @@ fn view(app: &tauri::AppHandle, state: &AppState) -> Value {
     let saved = settings_read(app);
     let home = &state.home;
     let defaults = json!({
-        "envFile": default_env_path(home).display().to_string(), "site": DEFAULT_SITE,
-        "spField": DEFAULT_SP_FIELD, "teamField": DEFAULT_TEAM_FIELD,
+        "envFile": default_env_path(home).display().to_string(),
         "briefModel": brief::DEFAULT_MODEL, "briefLanguage": brief::DEFAULT_LANGUAGE,
         "claudePath": brief::claude::find("", home).unwrap_or_default(),
         "briefPrompt": brief::DEFAULT_PROMPT,
@@ -140,7 +137,7 @@ fn view(app: &tauri::AppHandle, state: &AppState) -> Value {
         }),
         Err(e) => json!({
             "settings": saved,
-            "effective": { "teamClause": jql_clause(&setting(&saved, "teamField").unwrap_or_else(|| DEFAULT_TEAM_FIELD.into())) },
+            "effective": { "teamClause": jql_clause(&setting(&saved, "teamField").unwrap_or_default()) },
             "defaults": defaults, "error": e.message(), "zoom": false,
         }),
     }
@@ -182,6 +179,9 @@ pub async fn config_check(state: State<'_, AppState>) -> Result<Value> {
     let me = j.get("/rest/api/3/myself").await?;
     let fields = j.get("/rest/api/3/field").await.unwrap_or(json!([]));
     let name_of = |id: &str| {
+        if id.is_empty() {
+            return None;
+        }
         fields
             .as_array()
             .and_then(|a| a.iter().find(|f| f["id"] == id))

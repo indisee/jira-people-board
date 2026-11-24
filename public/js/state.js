@@ -8,7 +8,7 @@ const DONE_PERIODS = [0, 7, 14, 30];
 
 export const S = {
   /** From config_get: { settings, effective, defaults, error, zoom }. */
-  config: { settings: {}, effective: { teamClause: "cf[10YYY]" }, defaults: {}, error: null, zoom: false },
+  config: { settings: {}, effective: { teamClause: "" }, defaults: {}, error: null, zoom: false },
   /** Board rows in board order: [{accountId, displayName, email, avatarUrl, projects:[{key,name}], addedAt, kind?, teamId?}] */
   people: [],
   /** rowId -> {state: "loading"|"ok"|"err", issues, more, url, err} */

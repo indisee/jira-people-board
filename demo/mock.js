@@ -110,9 +110,9 @@
 
   const H = {
     config_get: () => ({
-      settings: {},
+      settings: { site: SITE, spField: "customfield_10XXX", teamField: "customfield_10YYY" },
       effective: { envFile: "~/.jira-people-board.env", site: SITE, spField: "customfield_10XXX", teamField: "customfield_10YYY", teamClause: "cf[10YYY]" },
-      defaults: { envFile: "~/.jira-people-board.env", site: SITE, spField: "customfield_10XXX", teamField: "customfield_10YYY",
+      defaults: { envFile: "~/.jira-people-board.env",
         briefModel: "sonnet", briefLanguage: "English", claudePath: "~/.local/bin/claude", briefPrompt: prompt },
       error: null, zoom: true,
     }),

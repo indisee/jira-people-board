@@ -183,7 +183,7 @@ mod live {
         let conn = crate::config::load(&home, &serde_json::json!({})).unwrap();
         let tmp = std::env::temp_dir().join("jpb-brief-test");
         let o = super::Options { prompt: String::new(), model: "sonnet".into(), language: "English".into(), claude_path: String::new(), force: true };
-        let key = std::env::var("BRIEF_KEY").unwrap_or_else(|_| "ABC-123".into());
+        let key = std::env::var("BRIEF_KEY").expect("set BRIEF_KEY to a ticket key");
         let v = super::brief(&conn.jira, &key, o, &tmp.join("cache.json"), &tmp, &home).await.unwrap();
         println!("{}", serde_json::to_string_pretty(&v).unwrap());
     }

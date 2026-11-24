@@ -28,12 +28,13 @@ function formHTML() {
   return `<form id="setForm" class="sform">
     <h3 class="ssec">Jira connection</h3>
     ${field("envFile", "Credentials file", "Holds ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (and the Zoom webhook). In the file dialog, ⇧⌘. shows hidden files.", d.envFile || "~/.release-script.env", { side: envButtons })}
-    ${field("site", "Jira site", "Your Atlassian Cloud address. The API token is sent only there.", d.site || "https://your-site.atlassian.net", { type: "url" })}
+    ${field("site", "Jira site", "Your Atlassian Cloud address. The API token is sent only there.", "https://your-site.atlassian.net", { type: "url" })}
     <h3 class="ssec">Custom fields</h3>
     <div class="sgrid">
-      ${field("spField", "Story points field", "", d.spField || "customfield_10XXX")}
-      ${field("teamField", "Team field", "", d.teamField || "customfield_10YYY")}
+      ${field("spField", "Story points field", "", "customfield_…")}
+      ${field("teamField", "Team field", "", "customfield_…")}
     </div>
+    <p class="shint">Field ids differ per Jira site. Jira shows them in Settings → Work items → Fields (the number in the field's URL), or ask your Jira admin. Story points are optional; the Team field is needed only for team rows.</p>
     <div class="scheck"><button class="btn" type="button" id="setCheck">Check connection</button><span id="checkOut" class="shint" aria-live="polite">${status}</span></div>
     <h3 class="ssec">Board</h3>
     <div class="sgrid">
@@ -122,7 +123,7 @@ export async function settingsWindow() {
     try {
       const r = await call("config_check");
       const eff = S.config.effective;
-      const f = (n, id) => (n ? `${esc(n)} ✓` : bad(`${id} not found`));
+      const f = (n, id) => (n ? `${esc(n)} ✓` : id ? bad(`${id} not found`) : "not set");
       o.innerHTML = `Connected as <b>${esc(r.user || "?")}</b> · Story points: ${f(r.spName, eff.spField)} · Team: ${f(r.teamName, eff.teamField)}`;
     } catch (e) { o.innerHTML = bad(e.msg); }
   };

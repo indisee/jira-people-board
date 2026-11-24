@@ -137,6 +137,9 @@ pub async fn users_search(state: State<'_, AppState>, q: String) -> Result<Value
 pub async fn teams_search(state: State<'_, AppState>, q: String) -> Result<Value> {
     let c = state.conn()?;
     let j = &c.jira;
+    if j.team_clause.is_empty() {
+        return Err(AppError::Config("The Team field is not set".into()));
+    }
     let v = j
         .get(&format!(
             "/rest/api/3/jql/autocompletedata/suggestions?fieldName={}&fieldValue={}",
@@ -172,7 +175,10 @@ pub async fn issues_search(
 ) -> Result<Value> {
     let c = state.conn()?;
     let j = &c.jira;
-    let fields = ["summary", "status", "issuetype", "priority", "project", "created", "updated", "assignee", &j.sp_field];
+    let mut fields = vec!["summary", "status", "issuetype", "priority", "project", "created", "updated", "assignee"];
+    if !j.sp_field.is_empty() {
+        fields.push(&j.sp_field);
+    }
     let r = j.search(&jql, max_results.unwrap_or(100).min(100) as usize, &fields).await?;
     let issues = items(&r["issues"]);
     let since = match &assignee {
@@ -205,7 +211,7 @@ pub async fn issues_search(
                 "cat": f["status"]["statusCategory"]["key"].as_str().unwrap_or("new"),
                 "type": f["issuetype"]["name"].as_str().unwrap_or(""),
                 "icon": f["issuetype"]["iconUrl"].as_str().unwrap_or(""),
-                "sp": f[&j.sp_field].as_f64(),
+                "sp": if j.sp_field.is_empty() { None } else { f[&j.sp_field].as_f64() },
                 "created": created,
                 "updated": f["updated"].as_str().unwrap_or(""),
                 "assignedAt": assigned_at,
